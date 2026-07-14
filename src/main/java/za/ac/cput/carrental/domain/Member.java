@@ -1,11 +1,17 @@
 package za.ac.cput.carrental.domain;
 
+import jakarta.persistence.*;
+
 //Stephanie Tola Oluwafemi Lewu
 // Student Number: 230211216
 // 21 June 2026
 
+@Entity
+@Table(name = "members")
 public class Member {
 
+    @Id
+    @Column(name = "member_id")
     private String memberId;
     private String name;
     private String licenseNumber;

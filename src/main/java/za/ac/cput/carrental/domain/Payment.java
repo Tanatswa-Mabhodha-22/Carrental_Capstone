@@ -1,11 +1,13 @@
 package za.ac.cput.carrental.domain;
 
-// owen jnr makene
-// student number 223219665
-// 21 June 2026
+import jakarta.persistence.*;
 
+@Entity
+@Table(name = "payments")
 public class Payment {
 
+    @Id
+    @Column(name = "payment_id")
     private String paymentId;
     private String bookingId;
     private double amount;

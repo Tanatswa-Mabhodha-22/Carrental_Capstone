@@ -10,8 +10,6 @@ package za.ac.cput.carrental.factory;
 import za.ac.cput.carrental.domain.Booking;
 import za.ac.cput.carrental.util.Helper;
 
-import java.time.LocalDate;
-
 public class BookingFactory {
     public static Booking createBooking(String memberId,
                                         String carId,
@@ -25,9 +23,9 @@ public class BookingFactory {
             return null;
         if(startDate == null || startDate.isEmpty())
             return null;
-        LocalDate localDate = LocalDate.parse(startDate);
-        LocalDate localEndDate = LocalDate.parse(endDate);
-        if(localDate.isBefore(localEndDate))
+        if(endDate == null || endDate.isEmpty())
+            return null;
+        if(!Helper.isDateRangeValid(startDate, endDate))
             return null;
         if(totalCost < 0)
             return null;

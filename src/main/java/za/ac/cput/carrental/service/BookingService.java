@@ -16,46 +16,27 @@ import java.util.List;
 
 @Service
  public class BookingService implements IBookingService {
-
-    private final BookingRepository bookingRepository;
-
 @Autowired
-    public BookingService(BookingRepository bookingRepository){
-        this.bookingRepository = bookingRepository;
+private  BookingRepository booking ;
+
+    @Override
+    public Booking craete(Booking booking) {
+        return this.booking.save(booking);
     }
 
     @Override
-    public Booking create(String memberId,
-                          String carId,
-                          String startDate,
-                          String endDate,
-                          double totalCost){
-        Booking booking = BookingFactory.createBooking(memberId,carId,startDate,
-                endDate,totalCost);
-        return bookingRepository.save(booking);
-    }
-
-    @Override
-    public Booking read(String bookingId){
-        return bookingRepository.findById(bookingId).orElse(null);
+    public Booking read(String id) {
+        return this.booking.findById(id).orElse(null);
     }
 
     @Override
     public Booking update(Booking booking) {
-        return null;
+        return this.booking.save(booking);
     }
 
     @Override
-    public boolean delete(String bookingId){
-        if (bookingRepository.existsById(bookingId)){
-            bookingRepository.deleteById(bookingId);
-            return true;
-        }
-        return false;
-    }
-
-    @Override
-    public List<Booking> getAll(){
-        return bookingRepository.findAll();
+    public boolean delete(String id) {
+        this.booking.deleteById(id);
+        return true;
     }
 }

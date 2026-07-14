@@ -10,18 +10,6 @@ import za.ac.cput.carrental.domain.Member;
 
 import java.util.List;
 
-public interface IMemberService {
-    Member create(String memberId,
-                  String name,
-                  String licenseNumber,
-                  String phoneNumber,
-                  String accountStatus);
+public interface IMemberService extends Iservice<Member,String>{
 
-    Member read(String memberId);
-
-    Member update(Member member);
-
-    boolean delete(String memberId);
-
-    List<Member> getAll();
 }

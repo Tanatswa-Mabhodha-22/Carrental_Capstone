@@ -9,12 +9,12 @@ package za.ac.cput.carrental.domain;
 import jakarta.persistence.*;
 
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 @Entity
 @Table(name = "booking")
 public class Booking {
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "booking_id",  nullable = false)
+    @Column(name = "booking_id", nullable = false)
     private String bookingId;
 
     @Column(name = "member_id", nullable = false)
@@ -71,8 +71,7 @@ public class Booking {
     public int calculateRentalDuration() {
         LocalDate start = LocalDate.parse(startDate);
         LocalDate end = LocalDate.parse(endDate);
-        int days = end.getDayOfYear() - start.getDayOfYear();
-        return days / 365;
+        return (int) ChronoUnit.DAYS.between(start, end);
     }
 
     public void extendRental(String newEndDate) {

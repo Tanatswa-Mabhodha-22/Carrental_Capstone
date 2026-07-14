@@ -17,6 +17,7 @@ public class Car {
     private String carId;
     private String make;
     private String model;
+    @Column(name = "car_year")
     private int year;
     private double dailyRate;
     private String status;
