@@ -17,6 +17,7 @@ public class CarServiceTest {
 
     @BeforeEach
     void setup() {
+
         car = CarFactory.buildCar("C001", "Toyota", "Corolla", 2022, 45.00, "AVAILABLE", 0);
     }
 

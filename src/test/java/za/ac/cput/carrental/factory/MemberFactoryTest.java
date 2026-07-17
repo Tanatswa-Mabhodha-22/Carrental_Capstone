@@ -11,13 +11,14 @@ public class MemberFactoryTest {
     @Test
     void testCreateMemberBooking_Success(){
         Member member = MemberFactory.createMember(
+                "M001",
                 "Stephanie Lewu",
                 "STOL230211",
                 "0665119940",
                 "ACTIVE"
         );
         assertNotNull(member);
-        assertNotNull(member.getMemberId());
+        assertEquals("M001", member.getMemberId());
         assertEquals("Stephanie Lewu",member.getName());
         assertEquals("STOL230211" ,member.getLicenseNumber());
         assertEquals("0665119940" ,member.getPhoneNumber());
@@ -27,6 +28,7 @@ public class MemberFactoryTest {
     @Test
     void testCreateMember_NotNull(){
         Member member = MemberFactory.createMember(
+                "M001",
                 "Stephanie Lewu",
                 "STOL230211",
                 "0665119940",

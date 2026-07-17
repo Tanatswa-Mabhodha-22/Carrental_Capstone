@@ -5,14 +5,21 @@
 
 package za.ac.cput.carrental.domain;
 
+import jakarta.persistence.*;
+
+@Entity
+@Table(name = "insurance")
 public class Insurance {
 
-
+    @Id
+    @Column(name = "insurance_id")
     private String insuranceId;
     private String bookingId;
     private String type;
     private double dailyPremium;
 
+    protected Insurance() {
+    }
 
     private Insurance(Builder builder) {
         this.insuranceId  = builder.insuranceId;

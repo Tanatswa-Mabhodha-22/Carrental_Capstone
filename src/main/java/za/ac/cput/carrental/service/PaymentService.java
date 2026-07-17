@@ -6,30 +6,29 @@ import za.ac.cput.carrental.domain.Payment;
 import za.ac.cput.carrental.repository.PaymentRepository;
 
 @Service
-public class PaymentService implements IPaymentService {
-
+public class PaymentService implements IPaymentService{
     @Autowired
-    private PaymentRepository paymentRepository;
-
+    private PaymentRepository payment ;
 
 
     @Override
-    public String create(String payment) {
-        return this.paymentRepository.save(payment);
+    public Payment create(Payment payment) {
+        return this.payment.save(payment);
     }
 
     @Override
-    public String read(Payment payment) {
-        return this.paymentRepository.save(payment);
+    public Payment read(String id) {
+        return this.payment.findById(id).orElse(null);
     }
 
     @Override
-    public String update(String string) {
-        return "";
+    public Payment update(Payment payment) {
+        return this.payment.save(payment);
     }
 
     @Override
-    public boolean delete(Payment payment) {
-        return false;
+    public boolean delete(String id) {
+        this.payment.deleteById(id);
+        return true;
     }
 }

@@ -7,19 +7,27 @@
 
 package za.ac.cput.carrental.domain;
 
+import jakarta.persistence.*;
+
 import java.util.ArrayList;
 import java.util.List;
 
+@Entity
+@Table(name = "garages")
 public class Garage {
 
+    @Id
+    @Column(name = "garage_id")
     private String garageId;
     private String garageName;
     private String address;
     private String city;
     private String managerName;
+
+    @Transient
     private List<Car> cars;
 
-    private Garage() {
+    protected Garage() {
     }
 
     private Garage(Builder builder) {

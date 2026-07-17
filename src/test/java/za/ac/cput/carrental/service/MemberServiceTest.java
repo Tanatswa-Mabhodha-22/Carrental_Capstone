@@ -25,7 +25,7 @@ public class MemberServiceTest {
                "Stephanie Lewu",
                "AIJ44667899",
                "0665119940",
-               "Actice"
+               "Active"
        );
    }
 
@@ -46,7 +46,7 @@ public class MemberServiceTest {
 
     @Test
     void testGetLicenseNumber() {
-        assertEquals("", member.getLicenseNumber());
+        assertEquals("AIJ44667899", member.getLicenseNumber());
     }
 
     @Test

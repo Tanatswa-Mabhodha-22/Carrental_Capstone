@@ -16,45 +16,28 @@ import java.util.List;
 
 @Service
 public class MemberService implements IMemberService {
+@Autowired
+    private  MemberRepository member;
 
-    private final MemberRepository memberRepository;
-
-    @Autowired
-    public MemberService(MemberRepository memberRepository){
-        this.memberRepository = memberRepository;
+    @Override
+    public Member create(Member member) {
+        return this.member.save(member);
     }
 
     @Override
-    public Member create(String memberId,
-                         String name,
-                         String licenseNumber,
-                         String phoneNumber,
-                         String accountStatus) {
-
-        Member member = MemberFactory.createMember(memberId, name, licenseNumber, phoneNumber, accountStatus);
-        return memberRepository.save(member);
+    public Member read(String id) {
+        return this.member.findById(id).orElse(null);
     }
 
     @Override
-    public Member read(String memberId){return memberRepository.findById(memberId).orElse(null);}
-
-    @Override
-    public Member update(Member member){
-    return memberRepository.save(member);
+    public Member update(Member member) {
+        return this.member.save(member);
     }
 
     @Override
-    public boolean delete(String memberId){
-        if (memberRepository.existsById(memberId)) {
-            memberRepository.deleteById(memberId);
-            return true;
-        }
-        return false;
-    }
-
-    @Override
-    public List<Member> getAll() {
-        return memberRepository.findAll();
+    public boolean delete(String id) {
+        this.member.deleteById(id);
+        return true;
     }
 }
 

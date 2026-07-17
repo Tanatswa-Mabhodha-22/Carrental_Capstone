@@ -5,55 +5,40 @@
 
         package za.ac.cput.carrental.service;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
 import za.ac.cput.carrental.domain.Insurance;
+import za.ac.cput.carrental.repository.InsuranceRepository;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Optional;
-
+@Service
 public class InsuranceService implements IInsuranceService {
-    private HashMap<String, Insurance> store = new HashMap<>();
 
-    // CREATE - adds a new Insurance to the store
+    @Autowired
+private InsuranceRepository insurance;
+
+
     @Override
     public Insurance create(Insurance insurance) {
-        if (insurance == null || insurance.getInsuranceId() == null) {
-            return null;
-        }
-        store.put(insurance.getInsuranceId(), insurance);
-        return insurance;
+        return this.insurance.save(insurance);
     }
 
-    // READ - retrieves an Insurance by its ID, wrapped in Optional
     @Override
-    public Optional<Insurance> read(String insuranceId) {
-        return Optional.ofNullable(store.get(insuranceId));
+    public Insurance read(String id) {
+        return this.insurance.findById(id).orElse(null);
     }
 
-    // UPDATE - replaces existing Insurance with updated version
     @Override
     public Insurance update(Insurance insurance) {
-        if (insurance == null || !store.containsKey(insurance.getInsuranceId())) {
-            return null;
-        }
-        store.put(insurance.getInsuranceId(), insurance);
-        return insurance;
+        return this.insurance.save(insurance);
     }
 
-    // DELETE - removes an Insurance from the store by its ID
     @Override
-    public boolean delete(String insuranceId) {
-        if (!store.containsKey(insuranceId)) {
-            return false;
-        }
-        store.remove(insuranceId);
+    public boolean delete(String id) {
+        this.insurance.deleteById(id);
         return true;
-    }
-
-    // GETALL - returns all Insurance objects in the store
-    @Override
-    public List<Insurance> getAll() {
-        return new ArrayList<>(store.values());
     }
 }

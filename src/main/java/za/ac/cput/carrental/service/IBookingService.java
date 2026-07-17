@@ -9,18 +9,7 @@ import za.ac.cput.carrental.domain.Booking;
 
 import java.util.List;
 
-public interface IBookingService {
+public interface IBookingService extends Iservice<Booking,String>{
 
-    Booking create(String memberId,
-                   String carId,
-                   String startDate,
-                   String endDate,
-                   double totalCost);
-
-     Booking read(String bookingId);
-     Booking update(Booking booking);
-     boolean delete(String bookingId);
-
-     List<Booking> getAll();
 
 }

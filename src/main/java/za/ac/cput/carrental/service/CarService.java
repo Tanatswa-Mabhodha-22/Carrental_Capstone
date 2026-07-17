@@ -10,41 +10,28 @@ import java.util.Optional;
 
 
 @Service
-public class CarService implements ICarService{
-
-    private final CarRepository carRepository;
-
-    @Autowired
-    public CarService(CarRepository carRepository) {
-        this.carRepository = carRepository;
-    }
+public class CarService implements ICarSerivce{
+@Autowired
+private  CarRepository CAR ;
 
     @Override
     public Car create(Car car) {
-        return carRepository.save(car);
+        return this.CAR.save(car);
     }
 
     @Override
-    public Optional<Car> read(String carId) {
-        return carRepository.findById(carId);
+    public Car read(String id) {
+        return this.CAR.findById(id).orElse(null);
     }
 
     @Override
     public Car update(Car car) {
-        return carRepository.save(car);
+        return this.CAR.save(car);
     }
 
     @Override
-    public boolean delete(String carId) {
-        if (carRepository.existsById(carId)) {
-            carRepository.deleteById(carId);
-            return true;
-        }
-        return false;
-    }
-
-    @Override
-    public List<Car> getAll() {
-        return carRepository.findAll();
+    public boolean delete(String id) {
+        this.CAR.deleteById(id);
+        return true;
     }
 }
