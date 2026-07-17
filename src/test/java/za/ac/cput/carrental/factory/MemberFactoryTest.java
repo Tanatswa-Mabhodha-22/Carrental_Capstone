@@ -14,7 +14,8 @@ public class MemberFactoryTest {
                 "M001",
                 "Stephanie Lewu",
                 "STOL230211",
-                "0665119940",
+                "066511994" +
+                        "0",
                 "ACTIVE"
         );
         assertNotNull(member);
