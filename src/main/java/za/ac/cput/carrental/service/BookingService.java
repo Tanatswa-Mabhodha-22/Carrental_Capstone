@@ -3,7 +3,6 @@ Author: Tanatswa Mabhodha 220637482
 07 July 2026
  */
 
-
 package za.ac.cput.carrental.service;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,3 +39,4 @@ private  BookingRepository booking ;
         return true;
     }
 }
+
