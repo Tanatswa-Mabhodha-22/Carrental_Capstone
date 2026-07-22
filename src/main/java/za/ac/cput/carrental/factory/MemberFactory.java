@@ -1,8 +1,12 @@
+/*MemberServiceTest.java
+Author: Stephanie Tola Oluwafemi Lewu
+Student Number: 230211216
+20 July 2026
+ */
+
 package za.ac.cput.carrental.factory;
 
-//Stephanie Tola Oluwafemi Lewu
-// Student Number: 230211216
-// 28 June 2026
+
 
 import za.ac.cput.carrental.domain.Member;
 import za.ac.cput.carrental.util.Helper;
