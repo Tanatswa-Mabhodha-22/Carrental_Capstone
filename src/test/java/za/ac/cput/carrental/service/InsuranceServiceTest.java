@@ -1,9 +1,16 @@
+
+/* InsuranceServiceTest.java
+   Insurance Service Test class
+   Author: Thandeka Chantal Malande (222857005)
+   Date: 12 July 2026 */
+
 package za.ac.cput.carrental.service;
 
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import za.ac.cput.carrental.domain.Insurance;
+import za.ac.cput.carrental.factory.InsuranceFactory;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -17,12 +24,9 @@ public class InsuranceServiceTest {
 
     @BeforeAll
     static void setUp() {
-        insurance = new Insurance.Builder()
-                .setInsuranceId("INS001")
-                .setBookingId("BOOK001")
-                .setType("Comprehensive")
-                .setDailyPremium(150.00)
-                .build();
+        // Using InsuranceFactory (the helper class) to create test data
+        insurance = InsuranceFactory.createInsurance(
+                "INS001", "BOOK001", "Comprehensive", 150.00);
     }
 
     @Test

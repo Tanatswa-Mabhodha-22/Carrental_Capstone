@@ -1,3 +1,5 @@
+// Author: Thandeka Chantal Malande - 222857005
+
 package za.ac.cput.carrental.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;

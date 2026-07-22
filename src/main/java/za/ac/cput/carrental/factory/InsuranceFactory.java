@@ -9,7 +9,7 @@ import za.ac.cput.carrental.domain.Insurance;
 
 public class InsuranceFactory {
 
-    // Factory method: create a basic Insurance object
+
     public static Insurance createInsurance(String insuranceId,
                                             String bookingId,
                                             String type,
@@ -22,7 +22,7 @@ public class InsuranceFactory {
                 .build();
     }
 
-    // Factory method: create a Comprehensive insurance policy
+
     public static Insurance createComprehensive(String insuranceId,
                                                 String bookingId) {
         return new Insurance.Builder()
@@ -33,7 +33,7 @@ public class InsuranceFactory {
                 .build();
     }
 
-    // Factory method: create a Third Party insurance policy
+
     public static Insurance createThirdParty(String insuranceId,
                                              String bookingId) {
         return new Insurance.Builder()
@@ -44,7 +44,7 @@ public class InsuranceFactory {
                 .build();
     }
 
-    // Factory method: create a copy of an existing Insurance object
+
     public static Insurance createCopy(Insurance existing) {
         return new Insurance.Builder()
                 .copy(existing)
