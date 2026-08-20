@@ -4,6 +4,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import za.ac.cput.carrental.domain.Insurance;
 import za.ac.cput.carrental.service.InsuranceService;
+
+import java.util.List;
+
 @RestController
 @RequestMapping("/insurance")
 public class InsuranceController {
@@ -29,5 +32,10 @@ public class InsuranceController {
     @DeleteMapping("/{id}")
     public void delete(@PathVariable String id) {
         this.insuranceService.delete(id);
+    }
+
+    @GetMapping
+    public List<Insurance> getAll() {
+        return this.insuranceService.getAll();
     }
 }

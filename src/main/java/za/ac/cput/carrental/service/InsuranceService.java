@@ -1,8 +1,3 @@
-/* InsuranceService.java
-   Insurance Service Implementation
-   Author: Thandeka Chantal Malande (222857005)
-   Date: 12 July 2026 */
-
 package za.ac.cput.carrental.service;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,4 +33,10 @@ public class InsuranceService implements IInsuranceService {
         insuranceRepository.deleteById(insuranceId);
         return true;
     }
+
+    @Override
+    public List<Insurance> getAll() {
+        return insuranceRepository.findAll();
+    }
 }
+

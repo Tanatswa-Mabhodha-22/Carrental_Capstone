@@ -1,9 +1,6 @@
 package za.ac.cput.carrental.service;
 
-/* CarServiceTest.java
-     Car Service Test
-     Author: Malwandla Blessing Mahori (230962963)
-     Date: 10 July 2026 */
+
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -11,13 +8,12 @@ import za.ac.cput.carrental.domain.Car;
 import za.ac.cput.carrental.repository.CarRepository;
 
 import java.util.List;
-import java.util.Optional;
 
 
 @Service
 public class CarService implements ICarSerivce{
-@Autowired
-private  CarRepository CAR ;
+    @Autowired
+    private  CarRepository CAR ;
 
     @Override
     public Car create(Car car) {
@@ -38,5 +34,10 @@ private  CarRepository CAR ;
     public boolean delete(String id) {
         this.CAR.deleteById(id);
         return true;
+    }
+
+    @Override
+    public List<Car> getAll() {
+        return this.CAR.findAll();
     }
 }

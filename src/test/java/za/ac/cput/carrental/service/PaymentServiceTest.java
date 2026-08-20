@@ -5,13 +5,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import za.ac.cput.carrental.domain.Payment;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 
 public class PaymentServiceTest {
-@Autowired
+    @Autowired
     private PaymentService paymentService;
     private static Payment payment;
     @BeforeAll
@@ -59,6 +61,15 @@ public class PaymentServiceTest {
 
     @Test
     @Order(4)
+    void getAll() {
+        List<Payment> payments = paymentService.getAll();
+        assertNotNull(payments);
+        assertFalse(payments.isEmpty());
+        System.out.println("All payments: " + payments);
+    }
+
+    @Test
+    @Order(5)
     void delete() {
         boolean deleted = paymentService.delete(payment.getPaymentId());
         assertTrue(deleted);

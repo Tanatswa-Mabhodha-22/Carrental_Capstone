@@ -5,6 +5,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import za.ac.cput.carrental.domain.Booking;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest
@@ -61,6 +63,15 @@ public class BookingServiceTest {
 
     @Test
     @Order(4)
+    void getAll() {
+        List<Booking> bookings = bookingService.getAll();
+        assertNotNull(bookings);
+        assertFalse(bookings.isEmpty());
+        System.out.println("All bookings: " + bookings);
+    }
+
+    @Test
+    @Order(5)
     void delete() {
         boolean deleted = bookingService.delete(booking.getBookingId());
         assertTrue(deleted);

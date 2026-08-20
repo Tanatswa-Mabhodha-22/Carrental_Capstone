@@ -6,6 +6,8 @@ import org.springframework.web.bind.annotation.*;
 import za.ac.cput.carrental.domain.Booking;
 import za.ac.cput.carrental.service.BookingService;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/booking")
 public class BookingController {
@@ -31,6 +33,11 @@ public class BookingController {
     @DeleteMapping("/{id}")
     public void delete(@PathVariable String id) {
         this.bookingService.delete(id);
+    }
+
+    @GetMapping
+    public List<Booking> getAll() {
+        return this.bookingService.getAll();
     }
 
 }

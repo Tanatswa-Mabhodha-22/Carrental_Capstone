@@ -1,8 +1,4 @@
 
-/* InsuranceServiceTest.java
-   Insurance Service Test class
-   Author: Thandeka Chantal Malande (222857005)
-   Date: 12 July 2026 */
 
 package za.ac.cput.carrental.service;
 
@@ -11,6 +7,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import za.ac.cput.carrental.domain.Insurance;
 import za.ac.cput.carrental.factory.InsuranceFactory;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -63,6 +61,15 @@ public class InsuranceServiceTest {
 
     @Test
     @Order(4)
+    void getAll() {
+        List<Insurance> insurances = insuranceService.getAll();
+        assertNotNull(insurances);
+        assertFalse(insurances.isEmpty());
+        System.out.println("All insurances: " + insurances);
+    }
+
+    @Test
+    @Order(5)
     void delete() {
         boolean deleted = insuranceService.delete(insurance.getInsuranceId());
         assertTrue(deleted);

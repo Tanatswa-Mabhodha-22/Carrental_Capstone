@@ -5,6 +5,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import za.ac.cput.carrental.domain.Garage;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest
@@ -59,6 +61,15 @@ class GarageControllerTest {
 
     @Test
     @Order(4)
+    void getAll() {
+        List<Garage> garages = garageController.getAll();
+        assertNotNull(garages);
+        assertFalse(garages.isEmpty());
+        System.out.println("All garages: " + garages);
+    }
+
+    @Test
+    @Order(5)
     void delete() {
         garageController.delete(garage.getGarageId());
         Garage deleted = garageController.read(garage.getGarageId());

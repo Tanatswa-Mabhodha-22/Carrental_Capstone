@@ -5,6 +5,8 @@ import org.springframework.web.bind.annotation.*;
 import za.ac.cput.carrental.domain.Payment;
 import za.ac.cput.carrental.service.PaymentService;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/payment")
 public class PaymentController {
@@ -31,5 +33,10 @@ public class PaymentController {
         this.payment.delete(id);
     }
 
+    @GetMapping
+    public List<Payment> getAll() {
+        return this.payment.getAll();
     }
+
+}
 

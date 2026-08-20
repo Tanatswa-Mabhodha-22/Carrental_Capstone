@@ -5,11 +5,12 @@ import org.springframework.stereotype.Service;
 import za.ac.cput.carrental.domain.Payment;
 import za.ac.cput.carrental.repository.PaymentRepository;
 
-@Service
-public class PaymentService implements IPaymentService{
-    @Autowired
-    private PaymentRepository payment ;
+import java.util.List;
 
+@Service
+public class PaymentService implements IPaymentService {
+    @Autowired
+    private PaymentRepository payment;
 
     @Override
     public Payment create(Payment payment) {
@@ -30,5 +31,10 @@ public class PaymentService implements IPaymentService{
     public boolean delete(String id) {
         this.payment.deleteById(id);
         return true;
+    }
+
+    @Override
+    public List<Payment> getAll() {
+        return this.payment.findAll();
     }
 }
