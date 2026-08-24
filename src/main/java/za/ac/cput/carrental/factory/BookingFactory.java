@@ -35,6 +35,7 @@ public class BookingFactory {
                 .setStartDate(startDate)
                 .setEndDate(endDate)
                 .setTotalCost(totalCost)
+                .setStatus("confirmed")
                 .build();
     }
 }

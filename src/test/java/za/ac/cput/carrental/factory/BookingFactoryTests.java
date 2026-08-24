@@ -25,6 +25,7 @@ public class BookingFactoryTests {
         assertEquals("2026-09-01", booking.getStartDate());
         assertEquals("2026-09-05", booking.getEndDate());
         assertEquals(1700.00, booking.getTotalCost());
+        assertEquals("Confirmed", booking.getStatus());
     }
 
     @Test

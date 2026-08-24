@@ -28,9 +28,16 @@ public class BookingController {
         return this.bookingService.update(booking);
     }
 
+    @PutMapping("/{id}/cancel")
+    public Booking cancelBooking(@PathVariable String id) {
+        return this.bookingService.cancelBooking(id);
+    }
+
     @DeleteMapping("/{id}")
     public void delete(@PathVariable String id) {
         this.bookingService.delete(id);
     }
+
+
 
 }

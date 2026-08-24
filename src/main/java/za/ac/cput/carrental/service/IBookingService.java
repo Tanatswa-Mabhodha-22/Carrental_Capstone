@@ -11,5 +11,6 @@ import java.util.List;
 
 public interface IBookingService extends Iservice<Booking,String>{
 
+    Booking cancelBooking(String bookingId);
 
 }

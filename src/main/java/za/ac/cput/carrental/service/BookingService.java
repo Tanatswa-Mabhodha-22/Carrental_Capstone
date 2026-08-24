@@ -38,5 +38,18 @@ private  BookingRepository booking ;
         this.booking.deleteById(id);
         return true;
     }
+
+    @Override
+    public Booking cancelBooking(String bookingId) {
+        Booking existingBooking = booking.findById(bookingId).orElse(null);
+
+        if (existingBooking == null) {
+            return null;
+        }
+
+        Booking cancelledBooking = existingBooking.cancel();
+
+        return booking.save(cancelledBooking);
+    }
 }
 

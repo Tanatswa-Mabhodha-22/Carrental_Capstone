@@ -61,6 +61,15 @@ public class BookingServiceTest {
 
     @Test
     @Order(4)
+    void cancelBooking() {
+        Booking result = bookingService.cancelBooking(booking.getBookingId());
+        assertNotNull(result);
+        assertEquals("Cancelled", result.getStatus());
+        System.out.println("Cancelled: " + result);
+    }
+
+    @Test
+    @Order(5)
     void delete() {
         boolean deleted = bookingService.delete(booking.getBookingId());
         assertTrue(deleted);

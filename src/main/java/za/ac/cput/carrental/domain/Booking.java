@@ -32,6 +32,11 @@ public class Booking {
     @Column(name = "totalCost",  nullable = false)
     private double totalCost;
 
+    @Column(name = "status", nullable = false)
+    private String status;
+
+
+
     protected Booking() {
     }
 
@@ -42,6 +47,8 @@ public class Booking {
         this.startDate = builder.startDate;
         this.endDate = builder.endDate;
         this.totalCost = builder.totalCost;
+        this.status = builder.status;
+
     }
 
     public String getBookingId() {
@@ -68,6 +75,8 @@ public class Booking {
         return totalCost;
     }
 
+    public String getStatus() {return status; }
+
     public int calculateRentalDuration() {
         LocalDate start = LocalDate.parse(startDate);
         LocalDate end = LocalDate.parse(endDate);
@@ -76,6 +85,13 @@ public class Booking {
 
     public void extendRental(String newEndDate) {
         this.endDate = newEndDate;
+    }
+
+    public Booking cancel(){
+        return new Booking.Builder()
+                .copy(this)
+                .setStatus("Cancelled")
+                .build();
     }
 
     @Override
@@ -87,6 +103,7 @@ public class Booking {
                 ", startDate='" + startDate + '\'' +
                 ", endDate='" + endDate + '\'' +
                 ", totalCost=" + totalCost +
+                ", status='" + status + '\'' +
                 '}';
     }
 
@@ -97,6 +114,7 @@ public class Booking {
         private String startDate;
         private String endDate;
         private double totalCost;
+        private String status;
 
         public Builder setBookingId(String bookingId) {
             this.bookingId = bookingId;
@@ -128,6 +146,11 @@ public class Booking {
             return this;
         }
 
+        public Builder setStatus(String status) {
+            this.status = status;
+            return this;
+        }
+
         public Builder copy(Booking book) {
             this.bookingId = book.bookingId;
             this.memberId = book.memberId;
@@ -143,6 +166,8 @@ public class Booking {
             return new Booking(this);
 
         }
+
+
     }
 }
 
