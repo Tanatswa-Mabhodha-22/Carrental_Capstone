@@ -41,4 +41,9 @@ public class GarageService implements IGarageService {
         this.garage.deleteById(id);
         return true;
     }
+
+    @Override
+    public List<Garage> getAll() {
+        return this.garage.findAll();
+    }
 }

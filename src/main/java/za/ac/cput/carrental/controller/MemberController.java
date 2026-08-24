@@ -1,15 +1,11 @@
-/*MemberController.java
-Author: Stephanie Tola Oluwafemi Lewu
-Student Number: 230211216
-29 July 2026
- */
-
 package za.ac.cput.carrental.controller;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import za.ac.cput.carrental.domain.Member;
 import za.ac.cput.carrental.service.MemberService;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/member")
@@ -37,4 +33,10 @@ public class MemberController {
     public void delete(@PathVariable String id) {
         this.memberService.delete(id);
     }
+
+    @GetMapping
+    public List<Member> getAll() {
+        return this.memberService.getAll();
+    }
 }
+

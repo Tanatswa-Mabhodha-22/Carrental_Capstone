@@ -1,15 +1,13 @@
 package za.ac.cput.carrental.controller;
 
-/* CarControllerTest.java
-     CarControllerTest Class
-     Author: Malwandla Blessing Mahori (230962963)
-     Date 17 July 2026 */
 
 
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import za.ac.cput.carrental.domain.Car;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -68,6 +66,15 @@ class CarControllerTest {
 
     @Test
     @Order(4)
+    void getAll() {
+        List<Car> cars = carController.getAll();
+        assertNotNull(cars);
+        assertFalse(cars.isEmpty());
+        System.out.println("All cars: " + cars);
+    }
+
+    @Test
+    @Order(5)
     void delete() {
         carController.delete(car.getCarId());
         Car deleted = carController.read(car.getCarId());

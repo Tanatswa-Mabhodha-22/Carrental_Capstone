@@ -5,6 +5,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import za.ac.cput.carrental.domain.Payment;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest
@@ -60,6 +62,15 @@ class PaymentControllerTest {
 
     @Test
     @Order(4)
+    void getAll() {
+        List<Payment> payments = paymentController.getAll();
+        assertNotNull(payments);
+        assertFalse(payments.isEmpty());
+        System.out.println("All payments: " + payments);
+    }
+
+    @Test
+    @Order(5)
     void delete() {
         paymentController.delete(payment.getPaymentId());
         Payment deleted = paymentController.read(payment.getPaymentId());

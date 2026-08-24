@@ -16,7 +16,7 @@ import java.util.List;
 
 @Service
 public class MemberService implements IMemberService {
-@Autowired
+    @Autowired
     private  MemberRepository member;
 
     @Override
@@ -39,7 +39,9 @@ public class MemberService implements IMemberService {
         this.member.deleteById(id);
         return true;
     }
+
+    @Override
+    public List<Member> getAll() {
+        return this.member.findAll();
+    }
 }
-
-
-

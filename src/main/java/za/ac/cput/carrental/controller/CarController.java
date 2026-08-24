@@ -10,6 +10,8 @@ import org.springframework.web.bind.annotation.*;
 import za.ac.cput.carrental.domain.Car;
 import za.ac.cput.carrental.service.CarService;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/car")
 public class CarController {
@@ -34,6 +36,11 @@ public class CarController {
     @DeleteMapping("/{id}")
     public void delete(@PathVariable String id) {
         this.carService.delete(id);
+    }
+
+    @GetMapping
+    public List<Car> getAll() {
+        return this.carService.getAll();
     }
 
 }

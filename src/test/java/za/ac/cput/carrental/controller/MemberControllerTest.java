@@ -5,6 +5,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import za.ac.cput.carrental.domain.Member;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest
@@ -59,6 +61,15 @@ class MemberControllerTest {
 
     @Test
     @Order(4)
+    void getAll() {
+        List<Member> members = memberController.getAll();
+        assertNotNull(members);
+        assertFalse(members.isEmpty());
+        System.out.println("All members: " + members);
+    }
+
+    @Test
+    @Order(5)
     void delete() {
         memberController.delete(member.getMemberId());
         Member deleted = memberController.read(member.getMemberId());

@@ -5,6 +5,8 @@ import org.springframework.web.bind.annotation.*;
 import za.ac.cput.carrental.domain.Garage;
 import za.ac.cput.carrental.service.GarageService;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/garage")
 public class GarageController {
@@ -30,5 +32,10 @@ public class GarageController {
     @DeleteMapping("/{id}")
     public void delete(@PathVariable String id) {
         this.garageService.delete(id);
+    }
+
+    @GetMapping
+    public List<Garage> getAll() {
+        return this.garageService.getAll();
     }
 }

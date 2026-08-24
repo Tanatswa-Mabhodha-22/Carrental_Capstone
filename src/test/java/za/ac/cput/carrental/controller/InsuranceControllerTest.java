@@ -5,6 +5,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import za.ac.cput.carrental.domain.Insurance;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest
@@ -59,6 +61,15 @@ class InsuranceControllerTest {
 
     @Test
     @Order(4)
+    void getAll() {
+        List<Insurance> insurances = insuranceController.getAll();
+        assertNotNull(insurances);
+        assertFalse(insurances.isEmpty());
+        System.out.println("All insurances: " + insurances);
+    }
+
+    @Test
+    @Order(5)
     void delete() {
         insuranceController.delete(insurance.getInsuranceId());
         Insurance deleted = insuranceController.read(insurance.getInsuranceId());

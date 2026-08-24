@@ -17,6 +17,15 @@ public class MemberFactory {
                                      String licenseNumber,
                                      String phoneNumber,
                                      String accountStatus){
+
+       if (Helper.isNullOrEmpty(memberId) ||
+               Helper.isNullOrEmpty(name) ||
+               Helper.isNullOrEmpty(licenseNumber) ||
+               Helper.isNullOrEmpty(phoneNumber) ||
+               Helper.isNullOrEmpty(accountStatus)) {
+           return null;
+       }
+
        return new Member.Builder()
                .setMemberId(memberId)
                .setName(name)
