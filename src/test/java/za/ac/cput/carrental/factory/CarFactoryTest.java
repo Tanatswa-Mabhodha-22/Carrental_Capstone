@@ -1,6 +1,6 @@
 package za.ac.cput.carrental.factory;
 
-/* CarFactoryTests.java
+/* CarFactoryTest.java
      Car Class
      Author: Malwandla Blessing Mahori (230962963)
      Date: 21 June 2026 */
@@ -10,7 +10,7 @@ import za.ac.cput.carrental.domain.Car;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-public class CarFactoryTests {
+public class CarFactoryTest {
 
     @Test
     void testBuildCar_Success(){

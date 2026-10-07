@@ -4,7 +4,7 @@ import za.ac.cput.carrental.domain.Garage;
 import static org.junit.jupiter.api.Assertions.*;
 
 
-public class GarageFactoryTests {
+public class GarageFactoryTest {
 
     @Test
         void createGarageShouldNotBeNull() {

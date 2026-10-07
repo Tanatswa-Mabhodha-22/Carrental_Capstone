@@ -11,7 +11,7 @@ import java.util.List;
 
 
 @Service
-public class CarService implements ICarSerivce{
+public class CarService implements ICarService {
     @Autowired
     private  CarRepository CAR ;
 

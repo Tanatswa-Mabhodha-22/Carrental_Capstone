@@ -6,7 +6,7 @@ import za.ac.cput.carrental.util.Helper;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-public class BookingFactoryTests {
+public class BookingFactoryTest {
 
     @Test
     void testCreateBooking_Success() {
