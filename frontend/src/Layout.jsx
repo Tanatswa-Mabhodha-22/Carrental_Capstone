@@ -14,9 +14,9 @@ const GLOBAL_CSS = `
 
 /**
  * Shared page layout: header (logo, nav, theme toggle), main content area, footer.
- * Props: nav [{id,label}], tab, onTabChange, theme, onToggleTheme, children
+ * Props: nav [{id,label}], tab, onTabChange, theme, onToggleTheme, user, onLogout, children
  */
-export default function Layout({ nav, tab, onTabChange, theme, onToggleTheme, children }) {
+export default function Layout({ nav, tab, onTabChange, theme, onToggleTheme, user, onLogout, children }) {
   return (
     <div
       style={{
@@ -52,6 +52,16 @@ export default function Layout({ nav, tab, onTabChange, theme, onToggleTheme, ch
                 {n.label}
               </button>
             ))}
+            {user && (
+              <>
+                <span className="text-sm hidden sm:inline" style={{ color: C.muted }}>
+                  {user.role === "ADMIN" ? "Admin" : `Hi, ${(user.name || "").split(" ")[0]}`}
+                </span>
+                <button onClick={onLogout} className="text-base font-medium pb-1" style={{ color: C.muted, borderBottom: "2px solid transparent" }}>
+                  Logout
+                </button>
+              </>
+            )}
             <button
               onClick={onToggleTheme}
               aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
