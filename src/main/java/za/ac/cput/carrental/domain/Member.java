@@ -1,5 +1,6 @@
 package za.ac.cput.carrental.domain;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 
 //Stephanie Tola Oluwafemi Lewu
@@ -18,6 +19,14 @@ public class Member {
     private String phoneNumber;
     private String accountStatus;
 
+    // --- login fields ---
+    private String email;
+    // Stores the password HASH. WRITE_ONLY: accepted in requests but never sent back in responses.
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private String password;
+    private String role;   // "CUSTOMER" or "ADMIN"
+    private String region;
+
     protected Member(){
 
     }
@@ -29,6 +38,10 @@ public class Member {
         this.licenseNumber = builder.licenseNumber;
         this.phoneNumber = builder.phoneNumber;
         this.accountStatus =  builder.accountStatus;
+        this.email = builder.email;
+        this.password = builder.password;
+        this.role = builder.role;
+        this.region = builder.region;
     }
 
     public String getMemberId() {
@@ -51,6 +64,22 @@ public class Member {
         return accountStatus;
     }
 
+    public String getEmail() {
+        return email;
+    }
+
+    public String getPassword() {
+        return password;
+    }
+
+    public String getRole() {
+        return role;
+    }
+
+    public String getRegion() {
+        return region;
+    }
+
     @Override
     public String toString() {
         return "Member{" +
@@ -59,6 +88,9 @@ public class Member {
                 ", licenseNumber='" + licenseNumber + '\'' +
                 ", phoneNumber=" + phoneNumber +
                 ", accountStatus='" + accountStatus + '\'' +
+                ", email='" + email + '\'' +
+                ", role='" + role + '\'' +
+                ", region='" + region + '\'' +
                 '}';
     }
 
@@ -68,6 +100,10 @@ public class Member {
         private String licenseNumber;
         private String phoneNumber;
         private String accountStatus;
+        private String email;
+        private String password;
+        private String role;
+        private String region;
 
         public Builder setMemberId(String memberId){
             this.memberId = memberId;
@@ -89,6 +125,23 @@ public class Member {
             this.accountStatus = accountStatus;
             return this;
         }
+        public Builder setEmail(String email){
+            this.email = email;
+            return this;
+        }
+        // Pass an already-hashed password (see PasswordUtil.hash).
+        public Builder setPassword(String password){
+            this.password = password;
+            return this;
+        }
+        public Builder setRole(String role){
+            this.role = role;
+            return this;
+        }
+        public Builder setRegion(String region){
+            this.region = region;
+            return this;
+        }
 
         public Builder copy(Member member) {
             this.memberId = member.getMemberId();
@@ -96,6 +149,10 @@ public class Member {
             this.licenseNumber = member.getLicenseNumber();
             this.phoneNumber = member.getPhoneNumber();
             this.accountStatus = member.getAccountStatus();
+            this.email = member.getEmail();
+            this.password = member.getPassword();
+            this.role = member.getRole();
+            this.region = member.getRegion();
             return this;
         }
 

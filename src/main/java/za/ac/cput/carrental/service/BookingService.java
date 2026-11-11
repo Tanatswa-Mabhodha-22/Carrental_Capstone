@@ -14,11 +14,11 @@ import za.ac.cput.carrental.repository.BookingRepository;
 import java.util.List;
 
 @Service
- public class BookingService implements IBookingService {
+public class BookingService implements IBookingService {
 
 
     @Autowired
-private  BookingRepository booking ;
+    private  BookingRepository booking ;
 
     @Override
     public Booking create(Booking booking) {
@@ -53,7 +53,6 @@ private  BookingRepository booking ;
 
     @Override
     public List<Booking> getAll() {
-        return List.of();
+        return this.booking.findAll();
     }
 }
-

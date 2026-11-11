@@ -6,6 +6,8 @@ import org.springframework.web.bind.annotation.*;
 import za.ac.cput.carrental.domain.Booking;
 import za.ac.cput.carrental.service.BookingService;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/booking")
 public class BookingController {
@@ -16,6 +18,11 @@ public class BookingController {
     @PostMapping
     public Booking create(@RequestBody Booking booking) {
         return this.bookingService.create(booking);
+    }
+
+    @GetMapping
+    public List<Booking> getAll() {
+        return this.bookingService.getAll();
     }
 
     @GetMapping("/{id}")
