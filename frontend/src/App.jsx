@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from "react";
 import Layout from "./Layout";
 import { C } from "./theme";
+import AuthView from "./AuthView";
+import AdminView from "./AdminView";
+import PaymentOverlay from "./PaymentOverlay";
+import { API_BASE, fmt, genId, StatusBadge, ProfileField, formatLicence, LICENCE_RE, PHONE_RE } from "./shared";
 import {
   MapPin,
   Gauge,
@@ -8,13 +12,12 @@ import {
   Landmark,
   Banknote,
   Building2,
-  Lock,
 } from "lucide-react";
 
 /* ---------------------------------------------------------------
    BACKEND
 ------------------------------------------------------------------*/
-const API_BASE = "http://localhost:3060";
+
 
 /* ---------------------------------------------------------------
    TOKENS — dark theme
@@ -33,16 +36,64 @@ const PAYMENT_METHODS = [
   { id: "Cash", label: "Cash on Collection", icon: Banknote },
 ];
 
+const BANKS = ["ABSA", "Capitec", "FNB", "Nedbank", "Standard Bank", "TymeBank", "African Bank"];
+
+const EMPTY_PAY = { cardNumber: "", cardName: "", expiry: "", cvv: "", bank: "", accountHolder: "", accountNumber: "" };
+const EMPTY_DRAFT = {
+  carId: "",
+  startDate: "",
+  endDate: "",
+  insuranceType: "STANDARD",
+  paymentMethod: "Card",
+  pay: EMPTY_PAY,
+};
+
+function formatCardNumber(v) {
+  return v.replace(/\D/g, "").slice(0, 16).replace(/(.{4})/g, "$1 ").trim();
+}
+function formatExpiry(v) {
+  const d = v.replace(/\D/g, "").slice(0, 4);
+  return d.length > 2 ? `${d.slice(0, 2)}/${d.slice(2)}` : d;
+}
+function expiryOk(v) {
+  const m = /^(\d{2})\/(\d{2})$/.exec(v);
+  if (!m) return false;
+  const month = +m[1];
+  const year = 2000 + +m[2];
+  if (month < 1 || month > 12) return false;
+  const now = new Date();
+  return year > now.getFullYear() || (year === now.getFullYear() && month >= now.getMonth() + 1);
+}
+// Returns an object of error messages (empty when valid) for the chosen payment method.
+function paymentErrors(method, p) {
+  const e = {};
+  if (method === "Card") {
+    if (p.cardNumber.replace(/\s/g, "").length !== 16) e.cardNumber = "Card number must be 16 digits";
+    if (!p.cardName.trim()) e.cardName = "Enter the name on the card";
+    if (!expiryOk(p.expiry)) e.expiry = "Use a valid future date (MM/YY)";
+    if (!/^\d{3}$/.test(p.cvv)) e.cvv = "CVV must be 3 digits";
+  } else if (method === "EFT") {
+    if (!p.bank) e.bank = "Choose your bank";
+    if (!p.accountHolder.trim()) e.accountHolder = "Enter the account holder name";
+    if (!/^\d{9,11}$/.test(p.accountNumber)) e.accountNumber = "Account number must be 9–11 digits";
+  }
+  return e;
+}
+
+// Today as YYYY-MM-DD in the user's local time zone.
+function todayStr() {
+  return new Date().toLocaleDateString("en-CA");
+}
+function nextDay(dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() + 1);
+  return d.toLocaleDateString("en-CA");
+}
+
 function rentalDuration(startDate, endDate) {
   if (!startDate || !endDate) return 0;
   const diff = Math.round((new Date(endDate) - new Date(startDate)) / 86400000);
   return diff > 0 ? diff : 0;
-}
-function genId(prefix) {
-  return `${prefix}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-}
-function fmt(n) {
-  return (n ?? 0).toLocaleString("en-ZA");
 }
 
 function carImage(car) {
@@ -79,32 +130,12 @@ function ManagerAvatar({ name, src }) {
   );
 }
 
-function StatusBadge({ status }) {
-  const map = {
-    AVAILABLE: { bg: C.greenBg, border: C.greenBorder, text: C.green, label: "AVAILABLE" },
-    UNDER_MAINTENANCE: { bg: C.redBg, border: C.redBorder, text: C.red, label: "UNDER MAINTENANCE" },
-    COMPLETED: { bg: C.greenBg, border: C.greenBorder, text: C.green, label: "COMPLETED" },
-    CANCELLED: { bg: C.redBg, border: C.redBorder, text: C.red, label: "CANCELLED" },
-    CONFIRMED: { bg: C.greenBg, border: C.greenBorder, text: C.green, label: "CONFIRMED" },
-  };
-  const s = map[String(status).toUpperCase()] || map.AVAILABLE;
-  return (
-    <span className="text-xs font-semibold px-2.5 py-1 rounded" style={{ background: s.bg, border: `1px solid ${s.border}`, color: s.text, letterSpacing: "0.03em" }}>
-      {s.label}
-    </span>
-  );
-}
 
-const NAV = [
-  { id: "fleet", label: "Fleet" },
-  { id: "garages", label: "Garages" },
-  { id: "book", label: "New Booking" },
-  { id: "account", label: "My Account" },
-];
 
 export default function CarRental() {
   const [tab, setTab] = useState("fleet");
   const [bookings, setBookings] = useState([]);
+  const [payStage, setPayStage] = useState(null); // null | "processing" | { receipt }
   const [theme, setTheme] = useState(() => {
     try {
       return localStorage.getItem("theme") || "dark";
@@ -160,16 +191,85 @@ export default function CarRental() {
   // just fills in their details once, and it's reused for every
   // booking after that. Swap this for a real Member record once
   // the backend exposes a /api/members endpoint.
-  const [currentUser, setCurrentUser] = useState(null);
-  const hasProfile = !!currentUser;
-
-  const [draft, setDraft] = useState({
-    carId: "",
-    startDate: "",
-    endDate: "",
-    insuranceType: "STANDARD",
-    paymentMethod: "Card",
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("user") || "null");
+    } catch {
+      return null;
+    }
   });
+  const hasProfile = !!currentUser;
+  const isAdmin = currentUser?.role === "ADMIN";
+
+  // Admins don't use the customer Fleet page; send them to the Admin page.
+  useEffect(() => {
+    if (isAdmin && (tab === "fleet" || tab === "login")) setTab("admin");
+  }, [isAdmin, tab]);
+
+  function updateUser(u) {
+    setCurrentUser(u);
+    try {
+      if (u) localStorage.setItem("user", JSON.stringify(u));
+      else localStorage.removeItem("user");
+    } catch {}
+  }
+  function handleAuth(u) {
+    updateUser(u);
+    setTab(u.role === "ADMIN" ? "admin" : "fleet");
+  }
+  function logout() {
+    updateUser(null);
+    setBookings([]);
+    setDraft(EMPTY_DRAFT);
+    setTab("fleet");
+  }
+
+  // Load this customer's booking history from the backend (survives refresh).
+  useEffect(() => {
+    if (!currentUser || isAdmin || loading) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [bRes, pRes] = await Promise.all([fetch(`${API_BASE}/booking`), fetch(`${API_BASE}/payment`)]);
+        if (!bRes.ok) throw new Error(`Failed to load bookings (${bRes.status})`);
+        const all = await bRes.json();
+        const pays = pRes.ok ? await pRes.json() : [];
+        const methodOf = {};
+        pays.forEach((p) => {
+          methodOf[p.bookingId] = p.method;
+        });
+        const mine = all
+          .filter((b) => b.memberId === currentUser.memberId)
+          .map((b) => {
+            const car = cars.find((c) => c.carId === b.carId);
+            return {
+              bookingId: b.bookingId,
+              car: car ? `${car.make} ${car.model}` : b.carId,
+              dates: `${b.startDate} – ${b.endDate}`,
+              days: rentalDuration(b.startDate, b.endDate),
+              insurance: "—",
+              total: b.totalCost,
+              status: b.status,
+              carId: b.carId,
+              memberId: b.memberId,
+              startDate: b.startDate,
+              endDate: b.endDate,
+              paymentMethod: methodOf[b.bookingId] || "Card",
+            };
+          })
+          .reverse();
+        if (!cancelled) setBookings(mine);
+      } catch (err) {
+        console.error("Error loading bookings:", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.memberId, loading]);
+
+  const [draft, setDraft] = useState(EMPTY_DRAFT);
 
   const selectedCar = cars.find((c) => c.carId === draft.carId);
   const days = rentalDuration(draft.startDate, draft.endDate);
@@ -177,16 +277,55 @@ export default function CarRental() {
   const carCost = selectedCar ? selectedCar.dailyRate * days : 0;
   const insuranceCost = insurance ? insurance.dailyPremium * days : 0;
   const totalCost = carCost + insuranceCost;
-  const canSubmit = hasProfile && draft.carId && days > 0;
+  const payErrors = paymentErrors(draft.paymentMethod, draft.pay);
+  const canSubmit =
+    hasProfile && draft.carId && days > 0 && draft.startDate >= todayStr() && Object.keys(payErrors).length === 0;
 
   function startBookingFor(carId) {
+    if (!currentUser || isAdmin) {
+      setTab("login");
+      return;
+    }
     setDraft((d) => ({ ...d, carId }));
     setTab("book");
+  }
+
+  // Saves a new status for a car in the backend and in the local list.
+  async function setCarStatus(carId, status) {
+    const car = cars.find((c) => c.carId === carId);
+    if (!car) return;
+    try {
+      const res = await fetch(`${API_BASE}/car`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...car, status }),
+      });
+      if (!res.ok) throw new Error(`Failed to update car (${res.status})`);
+      setCars((list) => list.map((c) => (c.carId === carId ? { ...c, status } : c)));
+    } catch (err) {
+      console.error("Error updating car status:", err);
+    }
   }
 
   async function submitBooking(e) {
     e.preventDefault();
     if (!canSubmit) return;
+
+    const method = draft.paymentMethod;
+    const needsProcessing = method !== "Cash";
+    const paymentId = genId("PAY");
+    const pay = draft.pay;
+    // Only the last 4 digits are ever shown on the receipt; full details are never stored or sent.
+    const methodDetail =
+      method === "Card"
+        ? `Card ending ${pay.cardNumber.replace(/\D/g, "").slice(-4)}`
+        : method === "EFT"
+        ? `${pay.bank} EFT (acc. ending ${pay.accountNumber.slice(-4)})`
+        : "Cash on collection";
+
+    if (needsProcessing) setPayStage("processing");
+    const minDelay = new Promise((r) => setTimeout(r, needsProcessing ? 2500 : 0));
+
     try {
       const bookingId = genId("BK");
       const res = await fetch(`${API_BASE}/booking`, {
@@ -209,14 +348,16 @@ export default function CarRental() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          paymentId: genId("PAY"),
+          paymentId,
           bookingId: saved.bookingId,
           amount: totalCost,
           paymentDate: new Date().toISOString().slice(0, 10),
-          method: draft.paymentMethod,
+          method,
         }),
       });
       if (!paymentRes.ok) throw new Error(`Failed to record payment (${paymentRes.status})`);
+
+      await setCarStatus(selectedCar.carId, "BOOKED");
 
       setBookings((b) => [
         {
@@ -232,16 +373,33 @@ export default function CarRental() {
           memberId: saved.memberId,
           startDate: saved.startDate,
           endDate: saved.endDate,
-          dailyRate: selectedCar.dailyRate,
-          dailyPremium: insurance.dailyPremium,
-          paymentMethod: draft.paymentMethod,
+          paymentMethod: method,
         },
         ...b,
       ]);
-      setDraft({ carId: "", startDate: "", endDate: "", insuranceType: "STANDARD", paymentMethod: "Card" });
-      setTab("account");
+
+      const receipt = {
+        bookingId: saved.bookingId,
+        paymentId,
+        date: new Date().toLocaleString("en-ZA", { dateStyle: "medium", timeStyle: "short" }),
+        customer: currentUser.name,
+        car: `${selectedCar.make} ${selectedCar.model}`,
+        dates: `${draft.startDate} – ${draft.endDate}`,
+        days,
+        carCost,
+        insuranceCost,
+        insuranceLabel: insurance.label,
+        total: totalCost,
+        method,
+        methodDetail,
+      };
+      await minDelay; // keep the "processing" screen up for a moment
+      setDraft(EMPTY_DRAFT);
+      setPayStage({ receipt });
     } catch (err) {
       console.error("Error creating booking:", err);
+      setPayStage(null);
+      alert("Something went wrong and your booking was not completed. Please try again.");
     }
   }
 
@@ -251,6 +409,8 @@ export default function CarRental() {
       const res = await fetch(`${API_BASE}/booking/${bookingId}/cancel`, { method: "PUT" });
       if (!res.ok) throw new Error(`Failed to cancel booking (${res.status})`);
       const updated = await res.json();
+      const cancelled = bookings.find((b) => b.bookingId === bookingId);
+      if (cancelled) await setCarStatus(cancelled.carId, "AVAILABLE");
       setBookings((list) =>
         list.map((b) => (b.bookingId === bookingId ? { ...b, status: updated.status } : b))
       );
@@ -271,7 +431,12 @@ export default function CarRental() {
     const d = new Date(b.endDate + "T00:00:00Z");
     d.setUTCDate(d.getUTCDate() + extra);
     const newEndDate = d.toISOString().slice(0, 10);
-    const extraCost = (b.dailyRate + b.dailyPremium) * extra;
+    const perDay = b.days > 0 ? Math.round(b.total / b.days) : 0;
+    if (!perDay) {
+      alert("Could not work out the daily price for this booking.");
+      return;
+    }
+    const extraCost = perDay * extra;
     const newTotal = b.total + extraCost;
     if (!window.confirm(`Extend to ${newEndDate}? Extra cost: R${fmt(extraCost)}`)) return;
     try {
@@ -325,29 +490,32 @@ export default function CarRental() {
 
   async function handleSaveProfile(form) {
     try {
-      const memberId = currentUser?.memberId || genId("MEM");
-      const res = await fetch(`${API_BASE}/member`, {
-        method: "POST",
+      const res = await fetch(`${API_BASE}/member/${currentUser.memberId}/profile`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          memberId,
           name: form.name,
           licenseNumber: form.licenseNumber,
           phoneNumber: form.phoneNumber,
           region: form.region.trim(),
-          status: "Active Member",
         }),
       });
       if (!res.ok) throw new Error(`Failed to save profile (${res.status})`);
-      const saved = await res.json();
-      setCurrentUser(saved);
+      updateUser(await res.json());
     } catch (err) {
       console.error("Error saving profile:", err);
+      alert("Could not save your details. Please try again.");
     }
   }
 
+  const nav = !currentUser
+    ? [{ id: "fleet", label: "Fleet" }, { id: "garages", label: "Garages" }, { id: "login", label: "Login" }]
+    : isAdmin
+    ? [{ id: "admin", label: "Admin" }, { id: "garages", label: "Garages" }]
+    : [{ id: "fleet", label: "Fleet" }, { id: "garages", label: "Garages" }, { id: "book", label: "New Booking" }, { id: "account", label: "My Account" }];
+
   return (
-    <Layout nav={NAV} tab={tab} onTabChange={setTab} theme={theme} onToggleTheme={toggleTheme}>
+    <Layout nav={nav} tab={tab} onTabChange={setTab} theme={theme} onToggleTheme={toggleTheme} user={currentUser} onLogout={logout}>
         {loading && (
           <p className="text-sm mb-6" style={{ color: C.muted }}>
             Loading fleet from server…
@@ -361,8 +529,16 @@ export default function CarRental() {
 
         {tab === "fleet" && <FleetView cars={cars} garages={garages} onBook={startBookingFor} />}
         {tab === "garages" && <GaragesView garages={garages} />}
+        <PaymentOverlay
+          stage={payStage}
+          onDone={() => {
+            setPayStage(null);
+            setTab("account");
+          }}
+        />
+        {tab === "login" && <AuthView onAuth={handleAuth} />}
         {tab === "book" &&
-          (hasProfile ? (
+          (currentUser && !isAdmin ? (
             <BookingView
               user={currentUser}
               cars={cars}
@@ -378,11 +554,15 @@ export default function CarRental() {
               onSubmit={submitBooking}
             />
           ) : (
-            <NoProfilePrompt onGoToAccount={() => setTab("account")} />
+            <AuthView onAuth={handleAuth} />
           ))}
-        {tab === "account" && (
-          <AccountView user={currentUser} bookings={bookings} onSaveProfile={handleSaveProfile} onCancel={cancelBooking} onExtend={extendBooking} />
-        )}
+        {tab === "account" &&
+          (currentUser && !isAdmin ? (
+            <AccountView user={currentUser} bookings={bookings} onSaveProfile={handleSaveProfile} onCancel={cancelBooking} onExtend={extendBooking} />
+          ) : (
+            <AuthView onAuth={handleAuth} />
+          ))}
+        {tab === "admin" && isAdmin && <AdminView cars={cars} setCars={setCars} />}
     </Layout>
   );
 }
@@ -447,7 +627,7 @@ function FleetView({ cars, garages, onBook }) {
                     className="tm-btn text-xs font-bold px-4 py-2.5 rounded-lg"
                     style={{ background: C.amber, color: C.onAmber }}
                   >
-                    BOOK THIS CAR
+                    {available ? "BOOK THIS CAR" : "NOT AVAILABLE"}
                   </button>
                 </div>
               </div>
@@ -500,35 +680,7 @@ function GaragesView({ garages }) {
   );
 }
 
-/* ---------------- NO PROFILE YET PROMPT (for New Booking tab) ---------------- */
-function NoProfilePrompt({ onGoToAccount }) {
-  return (
-    <section className="max-w-md mx-auto text-center py-20">
-      <div className="mx-auto mb-4 flex items-center justify-center rounded-full" style={{ width: 56, height: 56, background: C.panel, border: `1px solid ${C.border}` }}>
-        <Lock size={22} style={{ color: C.amber }} />
-      </div>
-      <h2 className="text-xl font-bold mb-2">Add your details first</h2>
-      <p className="text-sm mb-6" style={{ color: C.muted }}>
-        Fill in your renter details once on My Account, and they'll be reused for every booking.
-      </p>
-      <button onClick={onGoToAccount} className="tm-btn px-6 py-3 rounded-lg text-sm font-bold" style={{ background: C.amber, color: C.onAmber }}>
-        Go to My Account
-      </button>
-    </section>
-  );
-}
-
 /* ---------------- PROFILE FORM (one-time, no login/password) ---------------- */
-// Licence: "CPT-" followed by exactly 4 digits (e.g. CPT-1234).
-function formatLicence(v) {
-  const raw = v.toUpperCase();
-  const digits = raw.replace(/^CPT-?/, "").replace(/\D/g, "").slice(0, 4);
-  if (digits) return "CPT-" + digits;
-  if (raw === "") return "";
-  return "CPT-".startsWith(raw) ? raw : "CPT-";
-}
-const LICENCE_RE = /^CPT-\d{4}$/;
-const PHONE_RE = /^\d{10}$/;
 
 function ProfileForm({ initial, onSave }) {
   const [form, setForm] = useState({
@@ -583,30 +735,6 @@ function ProfileForm({ initial, onSave }) {
   );
 }
 
-function ProfileField({ label, value, onChange, placeholder, type = "text", maxLength, inputMode, error }) {
-  return (
-    <label className="flex flex-col gap-1.5">
-      <span className="text-xs" style={{ color: C.muted }}>
-        {label}
-      </span>
-      <input
-        type={type}
-        value={value}
-        placeholder={placeholder}
-        maxLength={maxLength}
-        inputMode={inputMode}
-        onChange={(e) => onChange(e.target.value)}
-        className="tm-input text-sm rounded-lg px-3 py-2.5"
-        style={{ background: C.panelAlt, border: `1px solid ${error ? C.red : C.border}`, color: C.text }}
-      />
-      {error && (
-        <span className="text-xs" style={{ color: C.red }}>
-          {error}
-        </span>
-      )}
-    </label>
-  );
-}
 
 /* ---------------- NEW BOOKING ---------------- */
 function SectionHeader({ number, title }) {
@@ -620,7 +748,7 @@ function SectionHeader({ number, title }) {
   );
 }
 
-function Field({ label, value, onChange, type = "text" }) {
+function Field({ label, value, onChange, type = "text", min }) {
   return (
     <label className="flex flex-col gap-1.5">
       <span className="text-xs" style={{ color: C.muted }}>
@@ -629,6 +757,7 @@ function Field({ label, value, onChange, type = "text" }) {
       <input
         type={type}
         value={value}
+        min={min}
         onChange={(e) => onChange(e.target.value)}
         className="tm-input text-sm rounded-lg px-3 py-2.5"
         style={{ background: C.panelAlt, border: `1px solid ${C.border}`, color: C.text }}
@@ -637,13 +766,76 @@ function Field({ label, value, onChange, type = "text" }) {
   );
 }
 
+// Pop-up notification (modal with an OK button).
+function NoticePopup({ message, onClose }) {
+  if (!message) return null;
+  return (
+    <div className="fixed inset-0 flex items-center justify-center px-4" style={{ background: "rgba(0,0,0,0.6)", zIndex: 60 }} onClick={onClose}>
+      <div className="rounded-xl p-6 text-center" style={{ background: C.panel, border: `1px solid ${C.border}`, width: 380, maxWidth: "100%" }} onClick={(e) => e.stopPropagation()}>
+        <div className="mx-auto mb-3 flex items-center justify-center rounded-full text-xl font-extrabold" style={{ width: 48, height: 48, background: C.amberTint, border: `1px solid ${C.amber}`, color: C.amber }}>
+          !
+        </div>
+        <p className="font-bold text-lg mb-2">Check your dates</p>
+        <p className="text-sm mb-5" style={{ color: C.muted }}>
+          {message}
+        </p>
+        <button autoFocus onClick={onClose} className="tm-btn w-full py-3 rounded-lg text-sm font-bold" style={{ background: C.amber, color: C.onAmber }}>
+          OK
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function BookingView({ user, cars, draft, setDraft, selectedCar, days, insurance, carCost, insuranceCost, totalCost, canSubmit, onSubmit }) {
+  const [dateNotice, setDateNotice] = useState("");
+
+  function changeStart(v) {
+    if (v && v < todayStr()) {
+      setDateNotice("The start date can't be in the past. Please choose today or a later date.");
+      setDraft((d) => ({ ...d, startDate: "" }));
+      return;
+    }
+    if (v && draft.endDate && draft.endDate <= v) {
+      setDateNotice(
+        draft.endDate === v
+          ? "The start and end dates are the same. A rental must be at least 1 day, so please choose an end date after the start date."
+          : "The end date is before the new start date, so it has been cleared. Please choose a new end date."
+      );
+      setDraft((d) => ({ ...d, startDate: v, endDate: "" }));
+      return;
+    }
+    setDraft((d) => ({ ...d, startDate: v }));
+  }
+
+  function changeEnd(v) {
+    if (v && draft.startDate && v <= draft.startDate) {
+      setDateNotice(
+        v === draft.startDate
+          ? "The start and end dates are the same. A rental must be at least 1 day, so please choose an end date after the start date."
+          : "The end date can't be before the start date. Please choose a later end date."
+      );
+      setDraft((d) => ({ ...d, endDate: "" }));
+      return;
+    }
+    if (v && v < todayStr()) {
+      setDateNotice("The end date can't be in the past. Please choose a later date.");
+      setDraft((d) => ({ ...d, endDate: "" }));
+      return;
+    }
+    setDraft((d) => ({ ...d, endDate: v }));
+  }
+
+  const setPay = (k, v) => setDraft((d) => ({ ...d, pay: { ...d.pay, [k]: v } }));
+  const payErrors = paymentErrors(draft.paymentMethod, draft.pay);
   return (
     <section>
       <h1 className="text-3xl font-extrabold mb-1">New Booking</h1>
       <p className="text-sm mb-8" style={{ color: C.muted }}>
         Complete the reservation below
       </p>
+
+      <NoticePopup message={dateNotice} onClose={() => setDateNotice("")} />
 
       <form onSubmit={onSubmit} className="grid lg:grid-cols-3 gap-6 items-start">
         <div className="lg:col-span-2 flex flex-col gap-5">
@@ -694,8 +886,8 @@ function BookingView({ user, cars, draft, setDraft, selectedCar, days, insurance
                   ))}
                 </select>
               </label>
-              <Field label="Start Date" type="date" value={draft.startDate} onChange={(v) => setDraft((d) => ({ ...d, startDate: v }))} />
-              <Field label="End Date" type="date" value={draft.endDate} onChange={(v) => setDraft((d) => ({ ...d, endDate: v }))} />
+              <Field label="Start Date" type="date" min={todayStr()} value={draft.startDate} onChange={changeStart} />
+              <Field label="End Date" type="date" min={draft.startDate ? nextDay(draft.startDate) : todayStr()} value={draft.endDate} onChange={changeEnd} />
             </div>
           </div>
 
@@ -750,6 +942,52 @@ function BookingView({ user, cars, draft, setDraft, selectedCar, days, insurance
                 );
               })}
             </div>
+
+            {draft.paymentMethod === "Card" && (
+              <div className="grid sm:grid-cols-2 gap-4 mt-5">
+                <div className="sm:col-span-2">
+                  <ProfileField label="Card Number" value={draft.pay.cardNumber} inputMode="numeric" maxLength={19} placeholder="1234 5678 9012 3456"
+                    onChange={(v) => setPay("cardNumber", formatCardNumber(v))} error={draft.pay.cardNumber && payErrors.cardNumber} />
+                </div>
+                <div className="sm:col-span-2">
+                  <ProfileField label="Name on Card" value={draft.pay.cardName} placeholder="As shown on the card"
+                    onChange={(v) => setPay("cardName", v)} />
+                </div>
+                <ProfileField label="Expiry (MM/YY)" value={draft.pay.expiry} inputMode="numeric" maxLength={5} placeholder="08/28"
+                  onChange={(v) => setPay("expiry", formatExpiry(v))} error={draft.pay.expiry.length === 5 && payErrors.expiry} />
+                <ProfileField label="CVV" value={draft.pay.cvv} inputMode="numeric" maxLength={3} placeholder="123"
+                  onChange={(v) => setPay("cvv", v.replace(/\D/g, "").slice(0, 3))} error={draft.pay.cvv && payErrors.cvv} />
+              </div>
+            )}
+
+            {draft.paymentMethod === "EFT" && (
+              <div className="grid sm:grid-cols-2 gap-4 mt-5">
+                <label className="flex flex-col gap-1.5 sm:col-span-2">
+                  <span className="text-xs" style={{ color: C.muted }}>Bank</span>
+                  <select
+                    value={draft.pay.bank}
+                    onChange={(e) => setPay("bank", e.target.value)}
+                    className="tm-input text-sm rounded-lg px-3 py-2.5"
+                    style={{ background: C.panelAlt, border: `1px solid ${C.border}`, color: C.text }}
+                  >
+                    <option value="">Choose your bank</option>
+                    {BANKS.map((b) => (
+                      <option key={b} value={b}>{b}</option>
+                    ))}
+                  </select>
+                </label>
+                <ProfileField label="Account Holder" value={draft.pay.accountHolder} placeholder="Name on the account"
+                  onChange={(v) => setPay("accountHolder", v)} />
+                <ProfileField label="Account Number" value={draft.pay.accountNumber} inputMode="numeric" maxLength={11} placeholder="9–11 digits"
+                  onChange={(v) => setPay("accountNumber", v.replace(/\D/g, "").slice(0, 11))} error={draft.pay.accountNumber && payErrors.accountNumber} />
+              </div>
+            )}
+
+            {draft.paymentMethod === "Cash" && (
+              <p className="text-xs mt-5" style={{ color: C.muted }}>
+                Pay in cash when you collect the car. No details needed now.
+              </p>
+            )}
           </div>
         </div>
 
@@ -814,7 +1052,7 @@ function SummaryRow({ label, value }) {
 function AccountView({ user, bookings, onSaveProfile, onCancel, onExtend }) {
   const [editing, setEditing] = useState(false);
 
-  if (!user || editing) {
+  if (editing) {
     return (
       <ProfileForm
         initial={user}
@@ -840,7 +1078,7 @@ function AccountView({ user, bookings, onSaveProfile, onCancel, onExtend }) {
             ID: {user.memberId}
           </p>
           <span className="text-xs font-semibold px-2.5 py-1 rounded" style={{ background: C.greenBg, border: `1px solid ${C.greenBorder}`, color: C.green }}>
-            {user.status}
+            {user.accountStatus}
           </span>
         </div>
         <div className="flex gap-8 text-sm flex-wrap">
