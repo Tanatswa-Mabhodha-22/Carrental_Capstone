@@ -1,25 +1,55 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { C } from "./theme";
-import { API_BASE, fmt, genId, StatusBadge, ProfileField } from "./shared";
+import { API_BASE, fmt, genId, StatusBadge, ProfileField, apiFetch, errorText, insuranceText, carImage, carImgError, downloadCsv } from "./shared";
 
-const CAR_STATUSES = ["AVAILABLE", "BOOKED", "UNDER_MAINTENANCE"];
+const CAR_STATUSES = ["AVAILABLE", "UNDER_MAINTENANCE"]; // "Booked" is worked out from the bookings and dates
 const EMPTY_CAR = { carId: "", make: "", model: "", year: "", dailyRate: "", mileage: "", status: "AVAILABLE" };
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
 const th = "text-left px-5 py-3 text-xs font-semibold";
 const td = "px-5 py-3";
 
-export default function AdminView({ cars, setCars }) {
+// Shrinks a photo to a JPEG of at most 1400px, so uploads are small and always the same format.
+async function shrinkImage(file, maxSize = 1400) {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  return new Promise((resolve, reject) =>
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Could not process that image"))), "image/jpeg", 0.85)
+  );
+}
+
+export default function AdminView({ cars, setCars, imageVersions, reloadImages }) {
   const [tab, setTab] = useState("bookings");
   const [bookings, setBookings] = useState([]);
   const [members, setMembers] = useState([]);
   const [error, setError] = useState("");
   const [carForm, setCarForm] = useState(null); // null = closed
+  const [photo, setPhoto] = useState(null); // { file, preview } chosen in the car form
+
+  function openCarForm(f) {
+    setPhoto(null);
+    setCarForm(f);
+  }
+  function pickPhoto(file) {
+    if (!file) return setPhoto(null);
+    if (!file.type.startsWith("image/")) {
+      alert("Please choose an image file.");
+      return;
+    }
+    setPhoto({ file, preview: URL.createObjectURL(file) });
+  }
 
   const load = useCallback(async () => {
     try {
       setError("");
-      const [bRes, mRes] = await Promise.all([fetch(`${API_BASE}/booking`), fetch(`${API_BASE}/member`)]);
+      const [bRes, mRes] = await Promise.all([apiFetch(`${API_BASE}/booking`), apiFetch(`${API_BASE}/member`)]);
       if (!bRes.ok || !mRes.ok) throw new Error("Could not load admin data");
       setBookings(await bRes.json());
       setMembers(await mRes.json());
@@ -32,22 +62,70 @@ export default function AdminView({ cars, setCars }) {
   }, [load]);
 
   const customers = members.filter((m) => m.role !== "ADMIN");
+
+  // A car is "booked" while a confirmed booking covers today. It frees itself when the booking ends.
+  const today = new Date().toLocaleDateString("en-CA");
+  const stateOf = (c) =>
+    c.status === "UNDER_MAINTENANCE"
+      ? "UNDER_MAINTENANCE"
+      : bookings.some((b) => b.carId === c.carId && String(b.status).toUpperCase() === "CONFIRMED" && b.startDate <= today && today < b.endDate)
+      ? "BOOKED"
+      : "AVAILABLE";
   const nameOf = (id) => members.find((m) => m.memberId === id)?.name || id;
   const carName = (id) => {
     const c = cars.find((x) => x.carId === id);
     return c ? `${c.make} ${c.model}` : id;
   };
 
+  const isBlocked = (m) => String(m.accountStatus || "").toLowerCase() === "blocked";
+
+  async function toggleBlock(m) {
+    const blocked = isBlocked(m);
+    if (!window.confirm(blocked ? `Unblock ${m.name}?` : `Block ${m.name}? They won't be able to log in until you unblock them.`)) return;
+    try {
+      const res = await apiFetch(`${API_BASE}/member/${m.memberId}/${blocked ? "unblock" : "block"}`, { method: "PUT" });
+      if (!res.ok) throw new Error(await errorText(res, "Could not update the customer"));
+      await load();
+    } catch (err) {
+      alert(err instanceof TypeError ? "Can't reach the server. Is the backend running?" : err.message);
+    }
+  }
+
+  const stamp = new Date().toLocaleDateString("en-CA");
+  const daysBetween = (a, b) => Math.max(0, Math.round((new Date(b) - new Date(a)) / 86400000));
+
+  function exportBookings() {
+    downloadCsv(
+      `bookings-${stamp}.csv`,
+      ["Booking ID", "Customer", "Customer ID", "Car", "Start date", "End date", "Days", "Insurance", "Total (R)", "Status"],
+      bookings.map((b) => [
+        b.bookingId,
+        nameOf(b.memberId),
+        b.memberId,
+        carName(b.carId),
+        b.startDate,
+        b.endDate,
+        daysBetween(b.startDate, b.endDate),
+        insuranceText(b.insuranceType),
+        b.totalCost,
+        b.status,
+      ])
+    );
+  }
+
+  function exportCustomers() {
+    downloadCsv(
+      `customers-${stamp}.csv`,
+      ["Customer ID", "Name", "Email", "Licence", "Phone", "Region", "Status"],
+      customers.map((m) => [m.memberId, m.name, m.email || "", m.licenseNumber, m.phoneNumber, m.region || "", isBlocked(m) ? "Blocked" : "Active"])
+    );
+  }
+
   async function cancelBooking(b) {
     if (!window.confirm(`Cancel booking ${b.bookingId}?`)) return;
     try {
-      const res = await fetch(`${API_BASE}/booking/${b.bookingId}/cancel`, { method: "PUT" });
+      const res = await apiFetch(`${API_BASE}/booking/${b.bookingId}/cancel`, { method: "PUT" });
       if (!res.ok) throw new Error();
-      const car = cars.find((c) => c.carId === b.carId);
-      if (car) {
-        const r = await fetch(`${API_BASE}/car`, { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify({ ...car, status: "AVAILABLE" }) });
-        if (r.ok) setCars((list) => list.map((c) => (c.carId === car.carId ? { ...c, status: "AVAILABLE" } : c)));
-      }
       await load();
     } catch {
       alert("Could not cancel the booking.");
@@ -80,11 +158,24 @@ export default function AdminView({ cars, setCars }) {
       status: carForm.status,
     };
     try {
-      const res = await fetch(`${API_BASE}/car`, { method: isNew ? "POST" : "PUT", headers: JSON_HEADERS, body: JSON.stringify(body) });
+      const res = await apiFetch(`${API_BASE}/car`, { method: isNew ? "POST" : "PUT", headers: JSON_HEADERS, body: JSON.stringify(body) });
       if (!res.ok) throw new Error();
       const saved = await res.json();
       setCars((list) => (isNew ? [...list, saved] : list.map((c) => (c.carId === saved.carId ? saved : c))));
       setCarForm(null);
+      if (photo?.file) {
+        try {
+          const blob = await shrinkImage(photo.file);
+          const data = new FormData();
+          data.append("file", blob, "car.jpg");
+          const up = await apiFetch(`${API_BASE}/car/${saved.carId}/image`, { method: "POST", body: data });
+          if (!up.ok) throw new Error(await errorText(up, "The photo could not be uploaded"));
+          await reloadImages();
+        } catch (err) {
+          alert(`The car was saved, but the photo failed: ${err.message}`);
+        }
+      }
+      setPhoto(null);
     } catch {
       alert("Could not save the car. Is the backend running?");
     }
@@ -93,7 +184,7 @@ export default function AdminView({ cars, setCars }) {
   async function deleteCar(c) {
     if (!window.confirm(`Remove ${c.make} ${c.model} from the fleet?`)) return;
     try {
-      const res = await fetch(`${API_BASE}/car/${c.carId}`, { method: "DELETE" });
+      const res = await apiFetch(`${API_BASE}/car/${c.carId}`, { method: "DELETE" });
       if (!res.ok) throw new Error();
       setCars((list) => list.filter((x) => x.carId !== c.carId));
     } catch {
@@ -115,6 +206,8 @@ export default function AdminView({ cars, setCars }) {
       <p className="text-sm mb-6" style={{ color: C.muted }}>
         See every booking and customer, and manage the fleet
       </p>
+
+      <Dashboard bookings={bookings} cars={cars} />
 
       <div className="flex gap-2 mb-6 flex-wrap">
         {tabs.map((t) => (
@@ -140,13 +233,16 @@ export default function AdminView({ cars, setCars }) {
       )}
 
       {tab === "bookings" && (
-        <Table heads={["ID", "CUSTOMER", "CAR", "DATES", "TOTAL", "STATUS", ""]} empty={bookings.length === 0 ? "No bookings yet." : ""}>
+        <>
+        <ExportBar label={`${bookings.length} booking${bookings.length === 1 ? "" : "s"}`} onExport={exportBookings} disabled={bookings.length === 0} />
+        <Table heads={["ID", "CUSTOMER", "CAR", "DATES", "INSURANCE", "TOTAL", "STATUS", ""]} empty={bookings.length === 0 ? "No bookings yet." : ""}>
           {[...bookings].reverse().map((b) => (
             <tr key={b.bookingId} style={{ borderBottom: `1px solid ${C.border}` }}>
               <td className={td + " font-semibold"} style={{ color: C.amber }}>{b.bookingId}</td>
               <td className={td}>{nameOf(b.memberId)}</td>
               <td className={td}>{carName(b.carId)}</td>
               <td className={td} style={{ color: C.muted }}>{b.startDate} – {b.endDate}</td>
+              <td className={td} style={{ color: C.muted }}>{insuranceText(b.insuranceType)}</td>
               <td className={td + " font-semibold"}>R{fmt(b.totalCost)}</td>
               <td className={td}><StatusBadge status={b.status} /></td>
               <td className={td}>
@@ -159,10 +255,13 @@ export default function AdminView({ cars, setCars }) {
             </tr>
           ))}
         </Table>
+        </>
       )}
 
       {tab === "customers" && (
-        <Table heads={["ID", "NAME", "EMAIL", "LICENCE", "PHONE", "REGION"]} empty={customers.length === 0 ? "No customers yet." : ""}>
+        <>
+        <ExportBar label={`${customers.length} customer${customers.length === 1 ? "" : "s"}`} onExport={exportCustomers} disabled={customers.length === 0} />
+        <Table heads={["ID", "NAME", "EMAIL", "LICENCE", "PHONE", "REGION", "STATUS", ""]} empty={customers.length === 0 ? "No customers yet." : ""}>
           {customers.map((m) => (
             <tr key={m.memberId} style={{ borderBottom: `1px solid ${C.border}` }}>
               <td className={td + " tm-mono"} style={{ color: C.faint }}>{m.memberId}</td>
@@ -171,9 +270,31 @@ export default function AdminView({ cars, setCars }) {
               <td className={td}>{m.licenseNumber}</td>
               <td className={td}>{m.phoneNumber}</td>
               <td className={td} style={{ color: C.muted }}>{m.region || "—"}</td>
+              <td className={td}>
+                <span
+                  className="text-xs font-semibold px-2.5 py-1 rounded"
+                  style={
+                    isBlocked(m)
+                      ? { background: C.redBg, border: `1px solid ${C.redBorder}`, color: C.red }
+                      : { background: C.greenBg, border: `1px solid ${C.greenBorder}`, color: C.green }
+                  }
+                >
+                  {isBlocked(m) ? "BLOCKED" : "ACTIVE"}
+                </span>
+              </td>
+              <td className={td}>
+                <button
+                  onClick={() => toggleBlock(m)}
+                  className="tm-btn text-xs font-semibold px-3 py-1.5 rounded-lg"
+                  style={isBlocked(m) ? { border: `1px solid ${C.border}`, color: C.text } : { border: `1px solid ${C.redBorder}`, color: C.red }}
+                >
+                  {isBlocked(m) ? "Unblock" : "Block"}
+                </button>
+              </td>
             </tr>
           ))}
         </Table>
+        </>
       )}
 
       {tab === "cars" && (
@@ -199,17 +320,32 @@ export default function AdminView({ cars, setCars }) {
                   ))}
                 </select>
               </label>
+              <div className="sm:col-span-3 flex items-center gap-4 flex-wrap">
+                {(photo?.preview || carForm.carId) && (
+                  <img
+                    src={photo?.preview || carImage(carForm, imageVersions)}
+                    alt="Car"
+                    onError={(e) => carImgError(e, carForm)}
+                    className="rounded-lg object-cover"
+                    style={{ width: 120, height: 75, background: C.panelAlt }}
+                  />
+                )}
+                <label className="flex flex-col gap-1.5 text-xs" style={{ color: C.muted }}>
+                  Photo (optional, JPG or PNG)
+                  <input type="file" accept="image/*" onChange={(e) => pickPhoto(e.target.files[0])} className="text-sm" style={{ color: C.text }} />
+                </label>
+              </div>
               <div className="sm:col-span-3 flex gap-3">
                 <button type="submit" disabled={Object.keys(errs).length > 0} className="tm-btn text-sm font-bold px-5 py-2.5 rounded-lg" style={{ background: C.amber, color: C.onAmber }}>
                   SAVE CAR
                 </button>
-                <button type="button" onClick={() => setCarForm(null)} className="tm-btn text-sm font-semibold px-5 py-2.5 rounded-lg" style={{ border: `1px solid ${C.border}`, color: C.text }}>
+                <button type="button" onClick={() => openCarForm(null)} className="tm-btn text-sm font-semibold px-5 py-2.5 rounded-lg" style={{ border: `1px solid ${C.border}`, color: C.text }}>
                   Cancel
                 </button>
               </div>
             </form>
           ) : (
-            <button onClick={() => setCarForm(EMPTY_CAR)} className="tm-btn text-sm font-bold px-5 py-2.5 rounded-lg mb-6" style={{ background: C.amber, color: C.onAmber }}>
+            <button onClick={() => openCarForm(EMPTY_CAR)} className="tm-btn text-sm font-bold px-5 py-2.5 rounded-lg mb-6" style={{ background: C.amber, color: C.onAmber }}>
               + ADD CAR
             </button>
           )}
@@ -222,22 +358,31 @@ export default function AdminView({ cars, setCars }) {
             ].map(([key, label]) => (
               <span key={key} className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{ background: C.panel, border: `1px solid ${C.border}`, color: C.muted }}>
                 {label}
-                <strong style={{ color: C.text }}>{cars.filter((c) => c.status === key).length}</strong>
+                <strong style={{ color: C.text }}>{cars.filter((c) => stateOf(c) === key).length}</strong>
               </span>
             ))}
           </div>
 
-          <Table heads={["CAR", "YEAR", "DAILY RATE", "MILEAGE", "STATUS", ""]} empty={cars.length === 0 ? "No cars yet." : ""}>
+          <Table heads={["", "CAR", "YEAR", "DAILY RATE", "MILEAGE", "STATUS", ""]} empty={cars.length === 0 ? "No cars yet." : ""}>
             {cars.map((c) => (
               <tr key={c.carId} style={{ borderBottom: `1px solid ${C.border}` }}>
+                <td className={td}>
+                  <img
+                    src={carImage(c, imageVersions)}
+                    alt=""
+                    onError={(e) => carImgError(e, c)}
+                    className="rounded object-cover"
+                    style={{ width: 64, height: 40, background: C.panelAlt }}
+                  />
+                </td>
                 <td className={td + " font-semibold"}>{c.make} {c.model}</td>
                 <td className={td} style={{ color: C.muted }}>{c.year}</td>
                 <td className={td}>R{fmt(c.dailyRate)}</td>
                 <td className={td} style={{ color: C.muted }}>{fmt(c.mileage)} km</td>
-                <td className={td}><StatusBadge status={c.status} admin /></td>
+                <td className={td}><StatusBadge status={stateOf(c)} admin /></td>
                 <td className={td}>
                   <button
-                    onClick={() => setCarForm({ ...c, year: String(c.year), dailyRate: String(c.dailyRate), mileage: String(c.mileage) })}
+                    onClick={() => openCarForm({ ...c, status: c.status === "UNDER_MAINTENANCE" ? "UNDER_MAINTENANCE" : "AVAILABLE", year: String(c.year), dailyRate: String(c.dailyRate), mileage: String(c.mileage) })}
                     className="tm-btn text-xs font-semibold px-3 py-1.5 rounded-lg mr-2"
                     style={{ border: `1px solid ${C.border}`, color: C.text }}
                   >
@@ -253,6 +398,24 @@ export default function AdminView({ cars, setCars }) {
         </>
       )}
     </section>
+  );
+}
+
+function ExportBar({ label, onExport, disabled }) {
+  return (
+    <div className="flex items-center justify-between mb-3">
+      <p className="text-sm" style={{ color: C.muted }}>
+        {label}
+      </p>
+      <button
+        onClick={onExport}
+        disabled={disabled}
+        className="tm-btn text-xs font-semibold px-4 py-2 rounded-lg"
+        style={{ border: `1px solid ${C.border}`, color: C.text }}
+      >
+        Export CSV
+      </button>
+    </div>
   );
 }
 
@@ -278,6 +441,49 @@ function Table({ heads, empty, children }) {
         </thead>
         <tbody>{children}</tbody>
       </table>
+    </div>
+  );
+}
+
+// Numbers at the top of the Admin page. Cancelled bookings are left out.
+function Dashboard({ bookings, cars }) {
+  const active = bookings.filter((b) => String(b.status).toUpperCase() !== "CANCELLED");
+  const revenue = active.reduce((sum, b) => sum + (b.totalCost || 0), 0);
+  const month = new Date().toLocaleDateString("en-CA").slice(0, 7); // YYYY-MM
+  const thisMonth = active.filter((b) => (b.startDate || "").startsWith(month)).length;
+
+  const counts = {};
+  active.forEach((b) => {
+    counts[b.carId] = (counts[b.carId] || 0) + 1;
+  });
+  const topId = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
+  const topCar = cars.find((c) => c.carId === topId);
+
+  const cards = [
+    { label: "Total revenue", value: `R${fmt(revenue)}`, note: `${active.length} booking${active.length === 1 ? "" : "s"}, cancelled ones left out` },
+    { label: "Rentals starting this month", value: String(thisMonth), note: new Date().toLocaleDateString("en-ZA", { month: "long", year: "numeric" }) },
+    {
+      label: "Most booked car",
+      value: topId ? (topCar ? `${topCar.make} ${topCar.model}` : topId) : "—",
+      note: topId ? `${counts[topId]} booking${counts[topId] === 1 ? "" : "s"}` : "No bookings yet",
+    },
+  ];
+
+  return (
+    <div className="grid sm:grid-cols-3 gap-4 mb-6">
+      {cards.map((c) => (
+        <div key={c.label} className="rounded-xl p-5" style={{ background: C.panel, border: `1px solid ${C.border}` }}>
+          <p className="text-xs uppercase mb-2" style={{ color: C.faint, letterSpacing: "0.06em" }}>
+            {c.label}
+          </p>
+          <p className="text-2xl font-extrabold mb-1" style={{ color: C.amber }}>
+            {c.value}
+          </p>
+          <p className="text-xs" style={{ color: C.muted }}>
+            {c.note}
+          </p>
+        </div>
+      ))}
     </div>
   );
 }

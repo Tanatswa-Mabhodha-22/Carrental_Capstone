@@ -35,6 +35,10 @@ public class Booking {
     @Column(name = "status", nullable = false)
     private String status;
 
+    // Which insurance option the customer chose (NONE, BASIC, STANDARD or PREMIUM). Older bookings have none saved.
+    @Column(name = "insurance_type")
+    private String insuranceType;
+
 
 
     protected Booking() {
@@ -48,6 +52,7 @@ public class Booking {
         this.endDate = builder.endDate;
         this.totalCost = builder.totalCost;
         this.status = builder.status;
+        this.insuranceType = builder.insuranceType;
 
     }
 
@@ -77,6 +82,10 @@ public class Booking {
 
     public String getStatus() {return status; }
 
+    public String getInsuranceType() {
+        return insuranceType;
+    }
+
     public int calculateRentalDuration() {
         LocalDate start = LocalDate.parse(startDate);
         LocalDate end = LocalDate.parse(endDate);
@@ -104,6 +113,7 @@ public class Booking {
                 ", endDate='" + endDate + '\'' +
                 ", totalCost=" + totalCost +
                 ", status='" + status + '\'' +
+                ", insuranceType='" + insuranceType + '\'' +
                 '}';
     }
 
@@ -115,6 +125,7 @@ public class Booking {
         private String endDate;
         private double totalCost;
         private String status;
+        private String insuranceType;
 
         public Builder setBookingId(String bookingId) {
             this.bookingId = bookingId;
@@ -151,6 +162,11 @@ public class Booking {
             return this;
         }
 
+        public Builder setInsuranceType(String insuranceType) {
+            this.insuranceType = insuranceType;
+            return this;
+        }
+
         public Builder copy(Booking book) {
             this.bookingId = book.bookingId;
             this.memberId = book.memberId;
@@ -158,6 +174,7 @@ public class Booking {
             this.startDate = book.startDate;
             this.endDate = book.endDate;
             this.totalCost = book.totalCost;
+            this.insuranceType = book.insuranceType;
             return this;
 
         }
@@ -170,6 +187,3 @@ public class Booking {
 
     }
 }
-
-
-
