@@ -12,7 +12,10 @@ import za.ac.cput.carrental.domain.Member;
 import za.ac.cput.carrental.repository.MemberRepository;
 import za.ac.cput.carrental.util.PasswordUtil;
 
+import java.util.ArrayDeque;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -106,6 +109,78 @@ public class MemberService implements IMemberService {
                 .setRegion(changes.getRegion().trim())
                 .build();
         return this.member.save(updated);
+    }
+
+    // ---------- Blocking ----------
+
+    public static boolean isBlocked(Member m) {
+        return m != null && "Blocked".equalsIgnoreCase(m.getAccountStatus());
+    }
+
+    /** Admin blocks or unblocks a customer. Returns null when the member doesn't exist. */
+    public Member setBlocked(String id, boolean blocked) {
+        Member existing = this.member.findById(id).orElse(null);
+        if (existing == null) return null;
+        if ("ADMIN".equals(existing.getRole())) {
+            throw new IllegalArgumentException("Admin accounts can't be blocked");
+        }
+        return this.member.save(new Member.Builder().copy(existing)
+                .setAccountStatus(blocked ? "Blocked" : "Active Member")
+                .build());
+    }
+
+    // ---------- Passwords ----------
+
+    /** Logged-in customer changes their own password. */
+    public void changePassword(String id, String currentPassword, String newPassword) {
+        Member existing = this.member.findById(id).orElse(null);
+        if (existing == null) {
+            throw new IllegalArgumentException("Account not found");
+        }
+        if (!PasswordUtil.matches(currentPassword, existing.getPassword())) {
+            throw new IllegalArgumentException("Your current password is wrong");
+        }
+        if (newPassword == null || newPassword.length() < 6) {
+            throw new IllegalArgumentException("The new password must be at least 6 characters");
+        }
+        this.member.save(new Member.Builder().copy(existing).setPassword(PasswordUtil.hash(newPassword)).build());
+    }
+
+    private final Map<String, ArrayDeque<Long>> resetAttempts = new HashMap<>();
+
+    // At most 5 reset attempts per email every 15 minutes.
+    private synchronized boolean throttled(String key) {
+        long now = System.currentTimeMillis();
+        ArrayDeque<Long> times = resetAttempts.computeIfAbsent(key, k -> new ArrayDeque<>());
+        while (!times.isEmpty() && now - times.peekFirst() > 15 * 60_000L) {
+            times.pollFirst();
+        }
+        if (times.size() >= 5) return true;
+        times.addLast(now);
+        return false;
+    }
+
+    /**
+     * "Forgot password": there is no email service, so the customer proves who they are with the
+     * email, licence number and phone number on their account. Admin accounts can't be reset this way.
+     */
+    public void resetPassword(String email, String licenseNumber, String phoneNumber, String newPassword) {
+        if (newPassword == null || newPassword.length() < 6) {
+            throw new IllegalArgumentException("The new password must be at least 6 characters");
+        }
+        String key = email == null ? "" : email.trim().toLowerCase();
+        if (throttled(key)) {
+            throw new IllegalStateException("Too many attempts. Please wait 15 minutes and try again.");
+        }
+        Member m = key.isEmpty() ? null : this.member.findByEmailIgnoreCase(key).orElse(null);
+        boolean matches = m != null
+                && !"ADMIN".equals(m.getRole())
+                && licenseNumber != null && licenseNumber.equals(m.getLicenseNumber())
+                && phoneNumber != null && phoneNumber.equals(m.getPhoneNumber());
+        if (!matches) {
+            throw new IllegalArgumentException("Those details don't match our records");
+        }
+        this.member.save(new Member.Builder().copy(m).setPassword(PasswordUtil.hash(newPassword)).build());
     }
 
     private void validateProfile(Member m) {

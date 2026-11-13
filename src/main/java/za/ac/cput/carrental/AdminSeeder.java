@@ -12,7 +12,7 @@ import za.ac.cput.carrental.util.PasswordUtil;
 public class AdminSeeder implements CommandLineRunner {
 
     public static final String ADMIN_EMAIL = "admin@carrental.co.za";
-    public static final String ADMIN_PASSWORD = "Admin@123";   // change this after your first login
+    public static final String ADMIN_PASSWORD = "Admin@123";
 
     @Autowired
     private MemberRepository members;
