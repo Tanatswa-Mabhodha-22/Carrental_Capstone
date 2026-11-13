@@ -4,7 +4,9 @@ import { C } from "./theme";
 import AuthView from "./AuthView";
 import AdminView from "./AdminView";
 import PaymentOverlay from "./PaymentOverlay";
-import { API_BASE, fmt, genId, StatusBadge, ProfileField, formatLicence, LICENCE_RE, PHONE_RE } from "./shared";
+import ChangePasswordCard from "./ChangePasswordCard";
+import AvailabilityCalendar from "./AvailabilityCalendar";
+import { API_BASE, fmt, genId, StatusBadge, ProfileField, formatLicence, LICENCE_RE, PHONE_RE, apiFetch, errorText, INSURANCE_TYPES, insuranceText, carImage, carImgError, findConflict } from "./shared";
 import {
   MapPin,
   Gauge,
@@ -22,13 +24,6 @@ import {
 /* ---------------------------------------------------------------
    TOKENS — dark theme
 ------------------------------------------------------------------*/
-
-const INSURANCE_TYPES = [
-  { type: "NONE", label: "None", desc: "Basic third-party liability. High claim excess applies.", dailyPremium: 0 },
-  { type: "BASIC", label: "Basic Protection", desc: "Covers mirror dents, light windshield scratches.", dailyPremium: 45 },
-  { type: "STANDARD", label: "Standard Excess Limit", desc: "Excess reduced by 60%. Recommended for city commutes.", dailyPremium: 85 },
-  { type: "PREMIUM", label: "Premium Waiver", desc: "Zero deductible / no-excess waiver. Complete peace of mind.", dailyPremium: 150 },
-];
 
 const PAYMENT_METHODS = [
   { id: "Card", label: "Credit/Debit Card", icon: CreditCard },
@@ -96,12 +91,6 @@ function rentalDuration(startDate, endDate) {
   return diff > 0 ? diff : 0;
 }
 
-function carImage(car) {
-  if (car.image) return car.image;
-  const slug = `${car.make}-${car.model}`.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-  return `/cars/${slug}.jpg`;
-}
-
 function managerImage(name) {
   const slug = (name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   return `/managers/${slug}.jpg`;
@@ -136,6 +125,8 @@ export default function CarRental() {
   const [tab, setTab] = useState("fleet");
   const [bookings, setBookings] = useState([]);
   const [payStage, setPayStage] = useState(null); // null | "processing" | { receipt }
+  const [imageVersions, setImageVersions] = useState({}); // { carId: time } for photos uploaded by the admin
+  const [busy, setBusy] = useState([]); // [{ carId, startDate, endDate }] confirmed bookings that have not finished
   const [theme, setTheme] = useState(() => {
     try {
       return localStorage.getItem("theme") || "dark";
@@ -164,8 +155,8 @@ export default function CarRental() {
         setLoadError(null);
 
         const [carsRes, garagesRes] = await Promise.all([
-          fetch(`${API_BASE}/car`),
-          fetch(`${API_BASE}/garage`),
+          apiFetch(`${API_BASE}/car`),
+          apiFetch(`${API_BASE}/garage`),
         ]);
 
         if (!carsRes.ok) throw new Error(`Failed to load cars (${carsRes.status})`);
@@ -193,6 +184,8 @@ export default function CarRental() {
   // the backend exposes a /api/members endpoint.
   const [currentUser, setCurrentUser] = useState(() => {
     try {
+      // An old login without a token can't call the protected backend, so make them log in again.
+      if (!localStorage.getItem("token")) return null;
       return JSON.parse(localStorage.getItem("user") || "null");
     } catch {
       return null;
@@ -210,18 +203,92 @@ export default function CarRental() {
     setCurrentUser(u);
     try {
       if (u) localStorage.setItem("user", JSON.stringify(u));
-      else localStorage.removeItem("user");
+      else {
+        localStorage.removeItem("user");
+        localStorage.removeItem("token");
+      }
     } catch {}
   }
-  function handleAuth(u) {
+  function handleAuth(u, token) {
+    try {
+      localStorage.setItem("token", token);
+    } catch {}
     updateUser(u);
     setTab(u.role === "ADMIN" ? "admin" : "fleet");
   }
+  // The backend said our login is no longer valid (expired token, or the backend restarted).
+  useEffect(() => {
+    function onExpired() {
+      try {
+        if (!localStorage.getItem("token")) return;
+      } catch {}
+      updateUser(null);
+      setBookings([]);
+      setTab("login");
+      alert("Your session has expired. Please log in again.");
+    }
+    function onBlocked() {
+      try {
+        if (!localStorage.getItem("token")) return;
+      } catch {}
+      updateUser(null);
+      setBookings([]);
+      setTab("login");
+      alert("Your account has been blocked. Please contact the admin.");
+    }
+    window.addEventListener("auth-expired", onExpired);
+    window.addEventListener("auth-blocked", onBlocked);
+    return () => {
+      window.removeEventListener("auth-expired", onExpired);
+      window.removeEventListener("auth-blocked", onBlocked);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function logout() {
     updateUser(null);
     setBookings([]);
     setDraft(EMPTY_DRAFT);
     setTab("fleet");
+  }
+
+  async function loadImages() {
+    try {
+      const res = await apiFetch(`${API_BASE}/car/images`);
+      if (res.ok) setImageVersions(await res.json());
+    } catch (err) {
+      console.error("Error loading car photos:", err);
+    }
+  }
+  useEffect(() => {
+    loadImages();
+  }, []);
+
+  async function loadBusy() {
+    try {
+      const res = await apiFetch(`${API_BASE}/booking/busy`);
+      if (res.ok) setBusy(await res.json());
+    } catch (err) {
+      console.error("Error loading availability:", err);
+    }
+  }
+  useEffect(() => {
+    loadBusy();
+  }, []);
+
+  // A car is "booked" while a confirmed booking covers today, and frees itself when that booking ends.
+  function carState(car) {
+    if (car.status === "UNDER_MAINTENANCE") return { status: "UNDER_MAINTENANCE" };
+    const t = todayStr();
+    const slot = busy.find((b) => b.carId === car.carId && b.startDate <= t && t < b.endDate);
+    if (!slot) return { status: "AVAILABLE" };
+    let freeFrom = slot.endDate;
+    for (let i = 0; i < 20; i++) {
+      const next = busy.find((b) => b.carId === car.carId && b.startDate === freeFrom);
+      if (!next) break;
+      freeFrom = next.endDate;
+    }
+    return { status: "BOOKED", freeFrom };
   }
 
   // Load this customer's booking history from the backend (survives refresh).
@@ -230,7 +297,7 @@ export default function CarRental() {
     let cancelled = false;
     (async () => {
       try {
-        const [bRes, pRes] = await Promise.all([fetch(`${API_BASE}/booking`), fetch(`${API_BASE}/payment`)]);
+        const [bRes, pRes] = await Promise.all([apiFetch(`${API_BASE}/booking/mine`), apiFetch(`${API_BASE}/payment/mine`)]);
         if (!bRes.ok) throw new Error(`Failed to load bookings (${bRes.status})`);
         const all = await bRes.json();
         const pays = pRes.ok ? await pRes.json() : [];
@@ -239,7 +306,6 @@ export default function CarRental() {
           methodOf[p.bookingId] = p.method;
         });
         const mine = all
-          .filter((b) => b.memberId === currentUser.memberId)
           .map((b) => {
             const car = cars.find((c) => c.carId === b.carId);
             return {
@@ -247,7 +313,7 @@ export default function CarRental() {
               car: car ? `${car.make} ${car.model}` : b.carId,
               dates: `${b.startDate} – ${b.endDate}`,
               days: rentalDuration(b.startDate, b.endDate),
-              insurance: "—",
+              insurance: insuranceText(b.insuranceType),
               total: b.totalCost,
               status: b.status,
               carId: b.carId,
@@ -278,8 +344,9 @@ export default function CarRental() {
   const insuranceCost = insurance ? insurance.dailyPremium * days : 0;
   const totalCost = carCost + insuranceCost;
   const payErrors = paymentErrors(draft.paymentMethod, draft.pay);
+  const conflict = findConflict(busy, draft.carId, draft.startDate, draft.endDate);
   const canSubmit =
-    hasProfile && draft.carId && days > 0 && draft.startDate >= todayStr() && Object.keys(payErrors).length === 0;
+    hasProfile && draft.carId && days > 0 && draft.startDate >= todayStr() && !conflict && Object.keys(payErrors).length === 0;
 
   function startBookingFor(carId) {
     if (!currentUser || isAdmin) {
@@ -288,23 +355,6 @@ export default function CarRental() {
     }
     setDraft((d) => ({ ...d, carId }));
     setTab("book");
-  }
-
-  // Saves a new status for a car in the backend and in the local list.
-  async function setCarStatus(carId, status) {
-    const car = cars.find((c) => c.carId === carId);
-    if (!car) return;
-    try {
-      const res = await fetch(`${API_BASE}/car`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...car, status }),
-      });
-      if (!res.ok) throw new Error(`Failed to update car (${res.status})`);
-      setCars((list) => list.map((c) => (c.carId === carId ? { ...c, status } : c)));
-    } catch (err) {
-      console.error("Error updating car status:", err);
-    }
   }
 
   async function submitBooking(e) {
@@ -328,7 +378,7 @@ export default function CarRental() {
 
     try {
       const bookingId = genId("BK");
-      const res = await fetch(`${API_BASE}/booking`, {
+      const res = await apiFetch(`${API_BASE}/booking`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -339,12 +389,13 @@ export default function CarRental() {
           endDate: draft.endDate,
           totalCost: totalCost,
           status: "CONFIRMED",
+          insuranceType: draft.insuranceType,
         }),
       });
-      if (!res.ok) throw new Error(`Failed to create booking (${res.status})`);
+      if (!res.ok) throw new Error(await errorText(res, `Failed to create booking (${res.status})`));
       const saved = await res.json();
 
-      const paymentRes = await fetch(`${API_BASE}/payment`, {
+      const paymentRes = await apiFetch(`${API_BASE}/payment`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -357,7 +408,9 @@ export default function CarRental() {
       });
       if (!paymentRes.ok) throw new Error(`Failed to record payment (${paymentRes.status})`);
 
-      await setCarStatus(selectedCar.carId, "BOOKED");
+      // Clear the form first. Otherwise the booking we just made shows up as a clash with the form's own dates.
+      setDraft(EMPTY_DRAFT);
+      await loadBusy();
 
       setBookings((b) => [
         {
@@ -365,7 +418,7 @@ export default function CarRental() {
           car: `${selectedCar.make} ${selectedCar.model}`,
           dates: `${draft.startDate} – ${draft.endDate}`,
           days,
-          insurance: `${insurance.label.split(" ")[0]} (R${insurance.dailyPremium}/day)`,
+          insurance: insuranceText(draft.insuranceType),
           total: totalCost,
           status: saved.status,
           // raw values kept so the booking can be extended later
@@ -394,23 +447,21 @@ export default function CarRental() {
         methodDetail,
       };
       await minDelay; // keep the "processing" screen up for a moment
-      setDraft(EMPTY_DRAFT);
       setPayStage({ receipt });
     } catch (err) {
       console.error("Error creating booking:", err);
       setPayStage(null);
-      alert("Something went wrong and your booking was not completed. Please try again.");
+      alert(err instanceof TypeError ? "Can't reach the server. Is the backend running?" : err.message || "Something went wrong and your booking was not completed. Please try again.");
     }
   }
 
   async function cancelBooking(bookingId) {
     if (!window.confirm("Cancel this booking?")) return;
     try {
-      const res = await fetch(`${API_BASE}/booking/${bookingId}/cancel`, { method: "PUT" });
+      const res = await apiFetch(`${API_BASE}/booking/${bookingId}/cancel`, { method: "PUT" });
       if (!res.ok) throw new Error(`Failed to cancel booking (${res.status})`);
       const updated = await res.json();
-      const cancelled = bookings.find((b) => b.bookingId === bookingId);
-      if (cancelled) await setCarStatus(cancelled.carId, "AVAILABLE");
+      await loadBusy();
       setBookings((list) =>
         list.map((b) => (b.bookingId === bookingId ? { ...b, status: updated.status } : b))
       );
@@ -440,7 +491,7 @@ export default function CarRental() {
     const newTotal = b.total + extraCost;
     if (!window.confirm(`Extend to ${newEndDate}? Extra cost: R${fmt(extraCost)}`)) return;
     try {
-      const res = await fetch(`${API_BASE}/booking`, {
+      const res = await apiFetch(`${API_BASE}/booking`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -453,10 +504,10 @@ export default function CarRental() {
           status: "CONFIRMED",
         }),
       });
-      if (!res.ok) throw new Error(`Failed to extend booking (${res.status})`);
+      if (!res.ok) throw new Error(await errorText(res, `Failed to extend booking (${res.status})`));
       const updated = await res.json();
 
-      const payRes = await fetch(`${API_BASE}/payment`, {
+      const payRes = await apiFetch(`${API_BASE}/payment`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -469,6 +520,7 @@ export default function CarRental() {
       });
       if (!payRes.ok) throw new Error(`Failed to record payment (${payRes.status})`);
 
+      await loadBusy();
       setBookings((list) =>
         list.map((x) =>
           x.bookingId === b.bookingId
@@ -484,13 +536,13 @@ export default function CarRental() {
       );
     } catch (err) {
       console.error("Error extending booking:", err);
-      alert("Could not extend the booking. Please try again.");
+      alert(err instanceof TypeError ? "Can't reach the server. Is the backend running?" : err.message || "Could not extend the booking. Please try again.");
     }
   }
 
   async function handleSaveProfile(form) {
     try {
-      const res = await fetch(`${API_BASE}/member/${currentUser.memberId}/profile`, {
+      const res = await apiFetch(`${API_BASE}/member/${currentUser.memberId}/profile`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -527,7 +579,7 @@ export default function CarRental() {
           </p>
         )}
 
-        {tab === "fleet" && <FleetView cars={cars} garages={garages} onBook={startBookingFor} />}
+        {tab === "fleet" && <FleetView cars={cars} garages={garages} carState={carState} imageVersions={imageVersions} onBook={startBookingFor} />}
         {tab === "garages" && <GaragesView garages={garages} />}
         <PaymentOverlay
           stage={payStage}
@@ -540,6 +592,7 @@ export default function CarRental() {
         {tab === "book" &&
           (currentUser && !isAdmin ? (
             <BookingView
+              paying={payStage !== null}
               user={currentUser}
               cars={cars}
               draft={draft}
@@ -551,6 +604,8 @@ export default function CarRental() {
               insuranceCost={insuranceCost}
               totalCost={totalCost}
               canSubmit={canSubmit}
+              conflict={conflict}
+              busy={busy}
               onSubmit={submitBooking}
             />
           ) : (
@@ -562,39 +617,112 @@ export default function CarRental() {
           ) : (
             <AuthView onAuth={handleAuth} />
           ))}
-        {tab === "admin" && isAdmin && <AdminView cars={cars} setCars={setCars} />}
+        {tab === "admin" && isAdmin && <AdminView cars={cars} setCars={setCars} imageVersions={imageVersions} reloadImages={loadImages} />}
     </Layout>
   );
 }
 
 /* ---------------- FLEET ---------------- */
-function FleetView({ cars, garages, onBook }) {
+function FleetView({ cars, garages, carState, imageVersions, onBook }) {
+  const [search, setSearch] = useState("");
+  const [make, setMake] = useState("");
+  const [maxPrice, setMaxPrice] = useState("");
+  const [availableOnly, setAvailableOnly] = useState(false);
+  const [sort, setSort] = useState("default");
+
+  const makes = [...new Set(cars.map((c) => c.make))].sort();
+  const q = search.trim().toLowerCase();
+  let shown = cars.filter((c) => {
+    if (q && !`${c.make} ${c.model}`.toLowerCase().includes(q)) return false;
+    if (make && c.make !== make) return false;
+    if (maxPrice && c.dailyRate > Number(maxPrice)) return false;
+    if (availableOnly && carState(c).status !== "AVAILABLE") return false;
+    return true;
+  });
+  if (sort === "price-asc") shown = [...shown].sort((a, b) => a.dailyRate - b.dailyRate);
+  if (sort === "price-desc") shown = [...shown].sort((a, b) => b.dailyRate - a.dailyRate);
+  if (sort === "year-desc") shown = [...shown].sort((a, b) => b.year - a.year);
+  const filtersOn = q || make || maxPrice || availableOnly || sort !== "default";
+  const clearFilters = () => {
+    setSearch("");
+    setMake("");
+    setMaxPrice("");
+    setAvailableOnly(false);
+    setSort("default");
+  };
+  const ctl = "tm-input text-sm rounded-lg px-3 py-2.5";
+  const ctlStyle = { background: C.panel, border: `1px solid ${C.border}`, color: C.text };
+
   return (
     <section>
       <h1 className="text-3xl font-extrabold mb-1">Our Fleet</h1>
-      <p className="text-sm mb-8" style={{ color: C.muted }}>
+      <p className="text-sm mb-6" style={{ color: C.muted }}>
         Browse available vehicles in Cape Town and find your next ride
       </p>
 
+      <div className="flex flex-wrap gap-3 mb-3">
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search make or model" className={ctl + " flex-1"} style={{ ...ctlStyle, minWidth: 180 }} />
+        <select value={make} onChange={(e) => setMake(e.target.value)} className={ctl} style={ctlStyle}>
+          <option value="">All makes</option>
+          {makes.map((m) => (
+            <option key={m} value={m}>{m}</option>
+          ))}
+        </select>
+        <select value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} className={ctl} style={ctlStyle}>
+          <option value="">Any price</option>
+          <option value="500">Up to R500/day</option>
+          <option value="700">Up to R700/day</option>
+          <option value="1000">Up to R1 000/day</option>
+        </select>
+        <select value={sort} onChange={(e) => setSort(e.target.value)} className={ctl} style={ctlStyle}>
+          <option value="default">Sort: default</option>
+          <option value="price-asc">Price: low to high</option>
+          <option value="price-desc">Price: high to low</option>
+          <option value="year-desc">Newest first</option>
+        </select>
+        <button
+          onClick={() => setAvailableOnly((v) => !v)}
+          className="tm-btn text-sm font-semibold px-4 py-2.5 rounded-lg"
+          style={{ background: availableOnly ? C.amber : C.panel, color: availableOnly ? C.onAmber : C.muted, border: `1px solid ${availableOnly ? C.amber : C.border}` }}
+        >
+          Available now
+        </button>
+      </div>
+      <div className="flex items-center gap-4 mb-6 text-sm" style={{ color: C.muted }}>
+        <span>
+          Showing {shown.length} of {cars.length} cars
+        </span>
+        {filtersOn && (
+          <button onClick={clearFilters} className="font-semibold" style={{ color: C.amber }}>
+            Clear filters
+          </button>
+        )}
+      </div>
+
+      {shown.length === 0 && (
+        <p className="text-sm py-10 text-center" style={{ color: C.faint }}>
+          No cars match your search. Try clearing the filters.
+        </p>
+      )}
+
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {cars.map((car) => {
+        {shown.map((car) => {
           // Cars have no garageId in the backend yet, so they fall back to the first garage.
           const garage = garages.find((g) => g.garageId === car.garageId) || garages[0];
-          const available = car.status === "AVAILABLE";
+          const state = carState(car);
+          const blocked = state.status === "UNDER_MAINTENANCE";
+          const bookedNow = state.status === "BOOKED";
           return (
             <div key={car.carId} className="tm-card rounded-xl overflow-hidden" style={{ background: C.panel, border: `1px solid ${C.border}` }}>
               <div className="relative" style={{ aspectRatio: "16/10", background: C.panelAlt }}>
                 <img
-                  src={carImage(car)}
+                  src={carImage(car, imageVersions)}
                   alt={`${car.make} ${car.model}`}
                   className="w-full h-full object-cover"
-                  onError={(e) => {
-                    e.currentTarget.onerror = null;
-                    e.currentTarget.src = "/cars/placeholder.svg";
-                  }}
+                  onError={(e) => carImgError(e, car)}
                 />
                 <div className="absolute top-3 right-3">
-                  <StatusBadge status={car.status} />
+                  <StatusBadge status={state.status} />
                 </div>
               </div>
               <div className="p-4">
@@ -609,8 +737,11 @@ function FleetView({ cars, garages, onBook }) {
                     <Gauge size={13} /> {fmt(car.mileage)} km
                   </span>
                 </div>
-                <p className="flex items-center gap-1 text-xs mb-4" style={{ color: C.muted }}>
+                <p className="flex items-center gap-1 text-xs mb-1" style={{ color: C.muted }}>
                   <MapPin size={13} /> {garage?.garageName}
+                </p>
+                <p className="text-xs mb-4" style={{ color: bookedNow ? C.amber : "transparent" }}>
+                  {bookedNow ? `Available from ${state.freeFrom}` : "."}
                 </p>
                 <div className="flex items-end justify-between">
                   <div>
@@ -622,12 +753,12 @@ function FleetView({ cars, garages, onBook }) {
                     </p>
                   </div>
                   <button
-                    disabled={!available}
+                    disabled={blocked}
                     onClick={() => onBook(car.carId)}
                     className="tm-btn text-xs font-bold px-4 py-2.5 rounded-lg"
                     style={{ background: C.amber, color: C.onAmber }}
                   >
-                    {available ? "BOOK THIS CAR" : "NOT AVAILABLE"}
+                    {blocked ? "NOT AVAILABLE" : bookedNow ? "BOOK LATER DATES" : "BOOK THIS CAR"}
                   </button>
                 </div>
               </div>
@@ -640,7 +771,27 @@ function FleetView({ cars, garages, onBook }) {
 }
 
 /* ---------------- GARAGES ---------------- */
+// Garage photo from /garages/<garageId>.jpg in the frontend's public folder; neutral panel if the file is missing.
+function GarageImage({ garage, wide }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <div className="relative flex items-center justify-center" style={{ aspectRatio: wide ? "21/9" : "16/10", background: C.panelAlt }}>
+      {failed ? (
+        <Building2 size={wide ? 64 : 40} style={{ color: C.faint }} />
+      ) : (
+        <img
+          src={garage.image || `/garages/${garage.garageId}.jpg`}
+          alt={garage.garageName}
+          className="w-full h-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      )}
+    </div>
+  );
+}
+
 function GaragesView({ garages }) {
+  const single = garages.length === 1;
   return (
     <section>
       <h1 className="text-3xl font-extrabold mb-1">Our Garages</h1>
@@ -648,20 +799,24 @@ function GaragesView({ garages }) {
         Pickup and drop-off locations around Cape Town
       </p>
 
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {garages.map((g) => {
-                    return (
-            <div key={g.garageId} className="rounded-xl p-5" style={{ background: C.panel, border: `1px solid ${C.border}` }}>
-              <div className="flex items-start justify-between mb-2">
-                <h3 className="font-bold text-base">{g.garageName}</h3>
-                <MapPin size={16} style={{ color: C.amber }} />
+      <div className={single ? "grid grid-cols-1 gap-6" : "grid sm:grid-cols-2 lg:grid-cols-3 gap-6"}>
+        {garages.map((g) => (
+          <div key={g.garageId} className="rounded-xl overflow-hidden" style={{ background: C.panel, border: `1px solid ${C.border}` }}>
+            <GarageImage garage={g} wide={single} />
+
+            <div className={single ? "p-6 grid md:grid-cols-2 gap-6 items-center" : "p-5"}>
+              <div className={single ? "" : "mb-4"}>
+                <div className="flex items-start justify-between mb-2">
+                  <h3 className={single ? "font-extrabold text-xl" : "font-bold text-base"}>{g.garageName}</h3>
+                  <MapPin size={16} style={{ color: C.amber }} />
+                </div>
+                <p className="text-sm mb-1" style={{ color: C.muted }}>
+                  {g.address}
+                </p>
+                <p className="text-sm flex items-center gap-1" style={{ color: C.muted }}>
+                  <Building2 size={13} /> {g.city}
+                </p>
               </div>
-              <p className="text-xs mb-1" style={{ color: C.muted }}>
-                {g.address}
-              </p>
-              <p className="text-xs flex items-center gap-1 mb-4" style={{ color: C.muted }}>
-                <Building2 size={12} /> {g.city}
-              </p>
 
               <div className="flex items-center gap-3 p-3 rounded-lg" style={{ background: C.panelAlt, border: `1px solid ${C.border}` }}>
                 <ManagerAvatar name={g.managerName} src={g.avatar} />
@@ -673,8 +828,8 @@ function GaragesView({ garages }) {
                 </div>
               </div>
             </div>
-          );
-        })}
+          </div>
+        ))}
       </div>
     </section>
   );
@@ -787,8 +942,17 @@ function NoticePopup({ message, onClose }) {
   );
 }
 
-function BookingView({ user, cars, draft, setDraft, selectedCar, days, insurance, carCost, insuranceCost, totalCost, canSubmit, onSubmit }) {
+function BookingView({ user, cars, draft, setDraft, selectedCar, days, insurance, carCost, insuranceCost, totalCost, canSubmit, conflict, busy, paying, onSubmit }) {
   const [dateNotice, setDateNotice] = useState("");
+
+  // Pop up when the chosen car is already booked for the chosen dates.
+  const conflictKey = conflict ? `${conflict.carId}|${conflict.startDate}|${conflict.endDate}|${draft.startDate}|${draft.endDate}` : "";
+  useEffect(() => {
+    if (conflict && !paying) {
+      setDateNotice(`This car is already booked from ${conflict.startDate} to ${conflict.endDate}. Please choose different dates or another car.`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conflictKey]);
 
   function changeStart(v) {
     if (v && v < todayStr()) {
@@ -835,7 +999,7 @@ function BookingView({ user, cars, draft, setDraft, selectedCar, days, insurance
         Complete the reservation below
       </p>
 
-      <NoticePopup message={dateNotice} onClose={() => setDateNotice("")} />
+      <NoticePopup message={paying ? "" : dateNotice} onClose={() => setDateNotice("")} />
 
       <form onSubmit={onSubmit} className="grid lg:grid-cols-3 gap-6 items-start">
         <div className="lg:col-span-2 flex flex-col gap-5">
@@ -879,7 +1043,7 @@ function BookingView({ user, cars, draft, setDraft, selectedCar, days, insurance
                   style={{ background: C.panelAlt, border: `1px solid ${C.border}`, color: C.text }}
                 >
                   <option value="">Choose a car</option>
-                  {cars.filter((c) => c.status === "AVAILABLE").map((c) => (
+                  {cars.filter((c) => c.status !== "UNDER_MAINTENANCE").map((c) => (
                     <option key={c.carId} value={c.carId}>
                       {c.make} {c.model} (R{c.dailyRate}/day)
                     </option>
@@ -889,6 +1053,18 @@ function BookingView({ user, cars, draft, setDraft, selectedCar, days, insurance
               <Field label="Start Date" type="date" min={todayStr()} value={draft.startDate} onChange={changeStart} />
               <Field label="End Date" type="date" min={draft.startDate ? nextDay(draft.startDate) : todayStr()} value={draft.endDate} onChange={changeEnd} />
             </div>
+            {conflict && (
+              <p className="text-sm mt-4" style={{ color: C.red }}>
+                This car is already booked from {conflict.startDate} to {conflict.endDate}. Choose other dates or another car.
+              </p>
+            )}
+            <AvailabilityCalendar
+              carId={draft.carId}
+              busy={busy}
+              startDate={draft.startDate}
+              endDate={draft.endDate}
+              onPick={(start, end) => setDraft((d) => ({ ...d, startDate: start, endDate: end }))}
+            />
           </div>
 
           <div className="rounded-xl p-5" style={{ background: C.panel, border: `1px solid ${C.border}` }}>
@@ -1109,6 +1285,8 @@ function AccountView({ user, bookings, onSaveProfile, onCancel, onExtend }) {
           Edit Details
         </button>
       </div>
+
+      <ChangePasswordCard user={user} />
 
       <h2 className="font-bold text-lg mb-4">Booking History</h2>
       {bookings.length === 0 ? (
